@@ -142,13 +142,43 @@ NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://api.yourdomain.com
 
 ⚠️ **Tick "Build Variable?" on `NEXT_PUBLIC_MEDUSA_BACKEND_URL`.** Next bakes `NEXT_PUBLIC_*` values into the build and derives the allowed image hosts from this one. Setting it as a runtime-only variable produces a shop with broken product images, and changing it later needs a **rebuild**, not a restart.
 
+> **Why Tailwind is a runtime dependency here.** `NODE_ENV=production` makes npm skip `devDependencies`, but `tailwindcss`, `tailwindcss-animate`, `postcss` and `autoprefixer` are needed to *build* the CSS — not merely to develop. With them in `devDependencies` the build dies on `Cannot find module 'tailwindcss'`. They now sit in `dependencies` so the build works on any host that installs with production settings. Don't move them back.
+
 **Domain:** `https://yourdomain.com`.
 
 ---
 
-## 4. First run
+## 4. First run — seeding the beta
 
-**Create the admin account.** The seed script exists for development and creates a demo catalogue plus an admin whose password is public knowledge. On a real shop, do not run it. Instead open a terminal on `intersoft-api` (Coolify → the app → Terminal) and:
+This deployment is a beta, so seed it: an empty shop is hard to judge. The seed fills the database with a realistic catalogue you can click through, then hand to someone else to click through.
+
+Open a terminal on `intersoft-api` (Coolify → the app → **Terminal**) and run:
+
+```bash
+SEED_ADMIN_EMAIL=you@yourdomain.com SEED_ADMIN_PASSWORD='pick-a-real-password' npm run seed
+```
+
+**Set both variables.** Without them the script falls back to `admin@intersoft.al / supersecret`, which is written in this repository — fine on a laptop, not on something with a public domain. It prints a warning when it falls back, so you will not do it by accident. Passing them inline as above keeps the password out of Coolify's stored environment; it lives only in that terminal session.
+
+What you get: 1 admin, 3 shipping methods, 3 suppliers, 19 categories, 38 products with 46 variants, a `Sale` price list with 7 discounted variants, and a working `WELCOME10` code for 10% off. Stock is 20 per variant.
+
+**Safeguards.** The whole seed runs in one transaction, so if any step fails the database is left untouched rather than half-populated. And it refuses to run at all once `products` has rows — you cannot double-seed by re-running it.
+
+**`BACKEND_URL` must already be correct.** The seed writes absolute image URLs into the product rows. Seeding before the API's domain is set, or with `BACKEND_URL` still on localhost, produces a catalogue of broken images that only a re-seed fixes.
+
+### Going from beta to real
+
+The seeded catalogue is demo data — real prices and stock it is not. When the shop goes live, either start from a fresh database and skip this section entirely, or delete the demo rows:
+
+```bash
+psql "$DATABASE_URL" -c "truncate products, categories, suppliers, price_lists, campaigns restart identity cascade;"
+```
+
+Placed orders survive: an order stores its line items as a snapshot rather than a reference, so it stays readable after the products behind it are gone. Your admin account, customers and shipping methods are untouched too. The cascade reaches `variants`, `price_list_prices`, `campaign_redemptions` and `cart_items` — so anyone with a cart open at that moment finds it empty.
+
+### Just an admin, no demo data
+
+If you'd rather have an empty shop:
 
 ```bash
 node -e "
@@ -163,9 +193,7 @@ const { hashPassword } = require('./src/lib/auth')
 })()"
 ```
 
-Set `NEW_ADMIN_PASSWORD` as a temporary environment variable, run it, then remove the variable.
-
-*If you do seed a demo shop to try things out*, change the password immediately — `admin@intersoft-rks.com / supersecret` is in this repository.
+Set `NEW_ADMIN_PASSWORD` as a temporary environment variable, run it, then remove the variable. You will also need to add at least one shipping method in the admin before checkout works.
 
 **Then check, in order:**
 
