@@ -23,9 +23,20 @@ const CLIENT_ID = process.env.RAIACCEPT_CLIENT_ID || "kr2gs4117arvbnaperqff5dml"
 const USERNAME = process.env.RAIACCEPT_USERNAME
 const PASSWORD = process.env.RAIACCEPT_PASSWORD
 
-/** Their country codes are ISO 3166-1 alpha-3; we store alpha-2 at checkout. */
+/**
+ * Their `country` is a String-ENUM of ISO 3166-1 alpha-3 codes, and the field is
+ * "Recommended" rather than "Required".
+ *
+ * Kosovo is the catch: it has no ISO 3166-1 assignment at all. XK and XKX are
+ * user-assigned conventions, and their API rejects XKX outright —
+ * `billingAddress.country: Invalid format`. Since the field is optional, an
+ * unmappable country is omitted rather than guessed: a missing recommended
+ * field is accepted, a wrong one fails the whole checkout.
+ *
+ * If the bank confirms a code they accept for Kosovo, set
+ * RAIACCEPT_KOSOVO_COUNTRY and it is used without a code change.
+ */
 const ALPHA3 = {
-  xk: "XKX",
   al: "ALB",
   mk: "MKD",
   me: "MNE",
@@ -33,6 +44,7 @@ const ALPHA3 = {
   gr: "GRC",
   it: "ITA",
   de: "DEU",
+  ...(process.env.RAIACCEPT_KOSOVO_COUNTRY ? { xk: process.env.RAIACCEPT_KOSOVO_COUNTRY } : {}),
 }
 
 const isConfigured = () => Boolean(USERNAME && PASSWORD)
@@ -129,17 +141,20 @@ const request = async (method, path, body, { retryOnAuthFailure = true } = {}) =
 
 // ---------------------------------------------------------------- payloads
 
-const person = (address = {}) => ({
-  firstName: String(address.first_name || "").slice(0, 32),
-  lastName: String(address.last_name || "").slice(0, 32),
-  addressStreet1: String(address.address_1 || "").slice(0, 50),
-  addressStreet2: "",
-  addressStreet3: "",
-  city: String(address.city || "").slice(0, 50),
-  postalCode: String(address.postal_code || "").slice(0, 16),
-  country: ALPHA3[String(address.country_code || "").toLowerCase()] || "XKX",
-  state: "",
-})
+const person = (address = {}) => {
+  const country = ALPHA3[String(address.country_code || "").toLowerCase()]
+  return {
+    firstName: String(address.first_name || "").slice(0, 32),
+    lastName: String(address.last_name || "").slice(0, 32),
+    addressStreet1: String(address.address_1 || "").slice(0, 50),
+    addressStreet2: "",
+    addressStreet3: "",
+    city: String(address.city || "").slice(0, 50),
+    postalCode: String(address.postal_code || "").slice(0, 16),
+    ...(country ? { country } : {}),
+    state: "",
+  }
+}
 
 /**
  * Maps one of our orders onto their order payload.
