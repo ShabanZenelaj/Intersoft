@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Intersoft Admin</title>
+  <link rel="stylesheet" href="/admin/style.css" />
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="%230f172a"/><text x="16" y="23" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="800" fill="white">I</text></svg>' />
+</head>
+<body>
+  <!-- Icon sprite: referenced with <svg class="ico" viewBox="0 0 24 24"><use href="#i-…"></use></svg> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <g id="i-dashboard"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></g>
+      <g id="i-orders"><path d="M6 2h9l4 4v16H6z"/><path d="M15 2v4h4"/><path d="M9 13h7M9 17h7"/></g>
+      <g id="i-products"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></g>
+      <g id="i-categories"><path d="M4 5h16M4 12h16M4 19h10"/></g>
+      <g id="i-customers"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M17 5.5a3 3 0 0 1 0 5.8M17.5 20a5.5 5.5 0 0 0-2-4.3"/></g>
+      <g id="i-groups"><circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M2 19a5 5 0 0 1 10 0M12 19a5 5 0 0 1 10 0"/></g>
+      <g id="i-pricelists"><path d="M20.5 12.5 12 21l-9-9V3h9z"/><circle cx="7.5" cy="7.5" r="1.5"/></g>
+      <g id="i-campaigns"><path d="M3 11v3a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M16 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/></g>
+      <g id="i-shipping"><rect x="1.5" y="6" width="12" height="10" rx="1.5"/><path d="M13.5 10h4l3 3v3h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></g>
+      <g id="i-suppliers"><path d="M3 21V9l9-6 9 6v12z"/><path d="M9 21v-6h6v6"/></g>
+      <g id="i-import"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></g>
+      <g id="i-settings"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 15H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 8.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 4.6V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.5 1.5l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></g>
+      <g id="i-store"><path d="M4 9h16v11H4z"/><path d="M3 9l1.5-5h15L21 9M9 20v-6h6v6"/></g>
+      <g id="i-search"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g>
+      <g id="i-empty"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M8 4v3M16 4v3"/></g>
+      <g id="i-check"><path d="m4 12 5.5 5.5L20 7"/></g>
+      <g id="i-warn"><path d="M12 3 1.5 21h21z"/><path d="M12 10v5M12 18h.01"/></g>
+      <g id="i-logout"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4"/><path d="M10 17l-5-5 5-5M5 12h11"/></g>
+      <g id="i-plus"><path d="M12 5v14M5 12h14"/></g>
+      <g id="i-back"><path d="M15 19l-7-7 7-7"/></g>
+    </defs>
+  </svg>
+
+  <!-- ------------------------------------------------------------ login -->
+  <div id="login" class="login-screen hidden">
+    <form id="login-form" class="login-card">
+      <div class="login-brand">Intersoft</div>
+      <h1>Sign in to the store admin</h1>
+      <p class="muted">Manage products, orders, pricing and campaigns.</p>
+      <label>Email
+        <input type="email" name="email" required autocomplete="username" placeholder="you@intersoft.al" />
+      </label>
+      <label>Password
+        <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••" />
+      </label>
+      <p id="login-error" class="form-error hidden"></p>
+      <button type="submit" class="btn primary block" id="login-submit">Sign in</button>
+    </form>
+  </div>
+
+  <!-- ------------------------------------------------------------- app -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">I</span>
+        <span class="brand-text">Intersoft <span>Admin</span></span>
+      </div>
+
+      <nav id="nav">
+        <a href="#/" data-route="dashboard"><svg class="ico" viewBox="0 0 24 24"><use href="#i-dashboard"/></svg>Dashboard</a>
+
+        <span class="nav-group">Selling</span>
+        <a href="#/orders" data-route="orders"><svg class="ico" viewBox="0 0 24 24"><use href="#i-orders"/></svg>Orders</a>
+        <a href="#/customers" data-route="customers"><svg class="ico" viewBox="0 0 24 24"><use href="#i-customers"/></svg>Customers</a>
+
+        <span class="nav-group">Catalog</span>
+        <a href="#/products" data-route="products"><svg class="ico" viewBox="0 0 24 24"><use href="#i-products"/></svg>Products</a>
+        <a href="#/categories" data-route="categories"><svg class="ico" viewBox="0 0 24 24"><use href="#i-categories"/></svg>Categories</a>
+        <a href="#/suppliers" data-route="suppliers"><svg class="ico" viewBox="0 0 24 24"><use href="#i-suppliers"/></svg>Suppliers</a>
+        <a href="#/import" data-route="import"><svg class="ico" viewBox="0 0 24 24"><use href="#i-import"/></svg>Import from Excel</a>
+
+        <span class="nav-group">Pricing &amp; offers</span>
+        <a href="#/price-lists" data-route="price-lists"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pricelists"/></svg>Price lists</a>
+        <a href="#/campaigns" data-route="campaigns"><svg class="ico" viewBox="0 0 24 24"><use href="#i-campaigns"/></svg>Campaigns</a>
+        <a href="#/groups" data-route="groups"><svg class="ico" viewBox="0 0 24 24"><use href="#i-groups"/></svg>Customer groups</a>
+
+        <span class="nav-group">Store setup</span>
+        <a href="#/shipping" data-route="shipping"><svg class="ico" viewBox="0 0 24 24"><use href="#i-shipping"/></svg>Shipping</a>
+        <a href="#/settings" data-route="settings"><svg class="ico" viewBox="0 0 24 24"><use href="#i-settings"/></svg>Settings</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a class="visit-store" href="http://localhost:3000" target="_blank" rel="noreferrer">
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-store"/></svg>View the shop
+        </a>
+        <div class="who">
+          <span class="avatar" id="admin-initial">A</span>
+          <span class="who-text"><strong id="admin-email"></strong><span class="muted">Store manager</span></span>
+          <button id="logout" class="icon-btn" title="Sign out" aria-label="Sign out">
+            <svg class="ico" viewBox="0 0 24 24"><use href="#i-logout"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <button id="sidebar-toggle" class="icon-btn only-mobile" aria-label="Menu">
+          <svg class="ico" viewBox="0 0 24 24"><use href="#i-categories"/></svg>
+        </button>
+        <span class="topbar-title" id="topbar-title">Dashboard</span>
+      </header>
+      <main id="main" class="main"></main>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/admin/app.js"></script>
+</body>
+</html>

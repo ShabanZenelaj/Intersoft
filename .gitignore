@@ -1,0 +1,16 @@
+# Secrets — the sub-projects ignore their own .env files too, but never rely
+# on that alone when adding a new one.
+.env
+.env.*
+!.env.example
+
+node_modules/
+*.log
+.DS_Store
+
+# Admin-uploaded product images live on a persistent volume in production, not
+# in the repo.
+server/static/uploads/*
+!server/static/uploads/.gitkeep
+server/tmp/
+storefront/.next/
