@@ -14,3 +14,6 @@ server/static/uploads/*
 !server/static/uploads/.gitkeep
 server/tmp/
 storefront/.next/
+
+.idea
+.claude
