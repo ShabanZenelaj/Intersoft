@@ -165,7 +165,7 @@ const { hashPassword } = require('./src/lib/auth')
 
 Set `NEW_ADMIN_PASSWORD` as a temporary environment variable, run it, then remove the variable.
 
-*If you do seed a demo shop to try things out*, change the password immediately — `admin@intersoft.al / supersecret` is in this repository.
+*If you do seed a demo shop to try things out*, change the password immediately — `admin@intersoft-rks.com / supersecret` is in this repository.
 
 **Then check, in order:**
 

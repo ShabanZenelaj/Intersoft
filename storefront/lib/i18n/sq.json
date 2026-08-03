@@ -13,8 +13,6 @@
     "home": "Ballina"
   },
   "home": {
-    "announcement": "Ulje Vere — deri në 10% zbritje me kodin WELCOME10!",
-    "announcement_cta": "Bli Tash",
     "hero_title_1": "Ndërto PC-në e Ëndrrave",
     "hero_subtitle_1": "Komponentë premium, të përzgjedhur nga ekspertët dhe gati për dërgesë",
     "hero_cta_1": "Bli Komponentë",
@@ -151,7 +149,7 @@
     "fulfillment_status": "Dërgesa",
     "back_home": "Kthehu në ballinë",
     "view_orders": "Shiko porositë e mia",
-    "support_note": "Pyetje për porosinë tënde? Na shkruaj te support@intersoft.al.",
+    "support_note": "Pyetje për porosinë tënde? Na shkruaj te support@intersoft-rks.com.",
     "email_sent": "Të dërguam një email konfirmimi me detajet e porosisë.",
     "create_account_title": "Krijo llogari për të ndjekur porosinë",
     "create_account_text": "Zgjidh një fjalëkalim dhe kjo porosi do të ruhet në llogarinë tënde. Herës tjetër paguan më shpejt.",
@@ -272,7 +270,7 @@
     "body_2": "Dërgojmë në gjithë Kosovën, Shqipërinë dhe rajonin, me para në dorë në dorëzim, POS në dorëzim dhe pagesa online me kartë.",
     "contact_title": "Kontakti",
     "address": "Rruga Nënë Tereza 25, Prishtinë, Kosovë",
-    "email": "support@intersoft.al",
+    "email": "support@intersoft-rks.com",
     "phone": "+383 38 000 000",
     "hours": "Hën–Sht, 09:00–19:00"
   },

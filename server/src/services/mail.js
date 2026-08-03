@@ -10,7 +10,7 @@ const { money } = require("../lib/util")
  */
 
 const MAIL_DIR = path.join(__dirname, "..", "..", "tmp", "mail")
-const FROM = process.env.MAIL_FROM || "Intersoft <no-reply@intersoft.al>"
+const FROM = process.env.MAIL_FROM || "Intersoft <no-reply@intersoft-rks.com>"
 const STORE_URL = (process.env.STORE_ORIGIN || "http://localhost:3000").split(",")[0]
 
 const smtpConfigured = () => Boolean(process.env.SMTP_HOST)
@@ -162,7 +162,7 @@ const layout = ({ title, intro, body = "", cta, locale }) => {
       }
     </div>
     <div style="padding:18px 28px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12.5px;line-height:1.6">
-      ${escapeHtml(t.help)} <a href="mailto:support@intersoft.al" style="color:#4f46e5">support@intersoft.al</a><br />
+      ${escapeHtml(t.help)} <a href="mailto:support@intersoft-rks.com" style="color:#4f46e5">support@intersoft-rks.com</a><br />
       © ${new Date().getFullYear()} Intersoft
     </div>
   </div>

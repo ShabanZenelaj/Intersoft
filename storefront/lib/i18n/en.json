@@ -13,8 +13,6 @@
     "home": "Home"
   },
   "home": {
-    "announcement": "Summer Sale — up to 10% off with code WELCOME10",
-    "announcement_cta": "Shop Now",
     "hero_title_1": "Build Your Dream PC",
     "hero_subtitle_1": "Premium components, expert-picked and ready to ship",
     "hero_cta_1": "Shop Components",
@@ -151,7 +149,7 @@
     "fulfillment_status": "Fulfillment",
     "back_home": "Back to home",
     "view_orders": "View my orders",
-    "support_note": "Questions about your order? Write to us at support@intersoft.al.",
+    "support_note": "Questions about your order? Write to us at support@intersoft-rks.com.",
     "email_sent": "We sent you a confirmation email with the order details.",
     "create_account_title": "Create an account to track this order",
     "create_account_text": "Pick a password and this order is saved to your account. Next time you check out faster.",
@@ -272,7 +270,7 @@
     "body_2": "We ship across Kosovo, Albania and the region, with cash on delivery, POS on delivery and online card payments.",
     "contact_title": "Contact",
     "address": "Rruga Nënë Tereza 25, Pristina, Kosovo",
-    "email": "support@intersoft.al",
+    "email": "support@intersoft-rks.com",
     "phone": "+383 38 000 000",
     "hours": "Mon–Sat, 09:00–19:00"
   },

@@ -13,15 +13,6 @@ import { translateCategory, translateProduct } from "@/lib/utils"
 // Prices and campaign visibility depend on who is shopping.
 export const dynamic = "force-dynamic"
 
-const AnnouncementBar = ({ dict }) => (
-  <div className="flex h-[40px] w-full items-center justify-center text-nowrap bg-black px-2 text-center text-sm text-white sm:text-base/[18px]">
-    <span className="truncate">{dict.home.announcement}</span>
-    <Link prefetch={false} href="/search" className="ml-2 shrink-0 underline hover:no-underline">
-      {dict.home.announcement_cta}
-    </Link>
-  </div>
-)
-
 const HERO_SLIDES = [
   { id: "components", categoryHandle: "components", productHandle: "geforce-rtx-4070-12gb", index: 1 },
   { id: "gaming", categoryHandle: "desktop-pcs", productHandle: "titan-gaming-pc", index: 2 },
@@ -59,8 +50,6 @@ const HomePage = async () => {
 
   return (
     <div className="flex w-full flex-col">
-      <AnnouncementBar dict={dict} />
-
       <div className="mb-8 w-full sm:mb-12 lg:mb-16">
         <HomepageCarousel slides={slides} />
       </div>

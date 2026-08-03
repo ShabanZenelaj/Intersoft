@@ -64,8 +64,8 @@ export const Footer = ({ dict, categories = [] }) => (
                 </Link>
               </li>
               <li>
-                <a href="mailto:support@intersoft.al" className="transition-colors hover:text-gray-700">
-                  support@intersoft.al
+                <a href="mailto:support@intersoft-rks.com" className="transition-colors hover:text-gray-700">
+                  support@intersoft-rks.com
                 </a>
               </li>
             </ul>

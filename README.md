@@ -63,7 +63,7 @@ DATABASE_URL=postgres://localhost/intersoft_store
 JWT_SECRET=change_me_in_production        # 16+ chars, required
 STORE_ORIGIN=http://localhost:3000        # CORS allowlist + links in emails
 BACKEND_URL=http://127.0.0.1:9000         # used for image URLs
-MAIL_FROM=Intersoft <no-reply@intersoft.al>
+MAIL_FROM=Intersoft <no-reply@intersoft-rks.com>
 # SMTP_HOST=smtp.example.com              # without it, emails are written to tmp/mail
 # SMTP_PORT=587
 # SMTP_USER= / SMTP_PASS= / SMTP_SECURE=false
@@ -73,7 +73,7 @@ MAIL_FROM=Intersoft <no-reply@intersoft.al>
 # RAIFFEISEN_SECRET_KEY=...
 ```
 
-**Admin panel:** http://localhost:9000/admin — `admin@intersoft.al` / `supersecret` (seeded; change the password after first login via the API or replace the seed).
+**Admin panel:** http://localhost:9000/admin — `admin@intersoft-rks.com` / `supersecret` (seeded; change the password after first login via the API or replace the seed).
 
 ### 2. Storefront (`storefront/`)
 
