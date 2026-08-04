@@ -220,8 +220,12 @@ const createCheckout = async (args) => {
   const orderIdentification = created.orderIdentification
   if (!orderIdentification) throw fail("RaiAccept created no order identification.")
 
+  console.log(payload, "------> Raiaccept payload");
+
   const session = await request("POST", `/orders/${encodeURIComponent(orderIdentification)}/checkout`, payload)
   if (!session.paymentRedirectURL) throw fail("RaiAccept created no payment session.")
+
+  console.log(session, "------> Raiaccept session");
 
   return {
     orderIdentification,
