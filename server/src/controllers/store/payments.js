@@ -132,41 +132,159 @@ const markFailed = async (order, { transaction }) => {
 }
 
 const webhook = async (req, res) => {
+  console.log("[raiaccept:webhook] received", {
+    bodyKeys: Object.keys(req.body || {}),
+    transactionType: req.body?.transaction?.transactionType || null,
+    transactionStatus: req.body?.transaction?.status || null,
+    transactionStatusCode: req.body?.transaction?.statusCode || null,
+    orderIdentification: req.body?.order?.orderIdentification || null,
+    merchantOrderReference: req.body?.order?.invoice?.merchantOrderReference || null,
+  })
+
+  console.log("[raiaccept:webhook] finding matching order")
   const order = await findOrder(req.body)
+
   if (!order) {
+    console.log("[raiaccept:webhook] no matching order found", {
+      orderIdentification: req.body?.order?.orderIdentification || null,
+      merchantOrderReference: req.body?.order?.invoice?.merchantOrderReference || null,
+    })
+
     // Nothing to do, but say so cleanly so they stop retrying.
     return res.json({ received: true, matched: false })
   }
 
+  console.log("[raiaccept:webhook] matched order", {
+    orderId: order.id,
+    displayId: order.display_id,
+    status: order.status,
+    paymentStatus: order.payment_status,
+    raiacceptOrderId: order.raiaccept_order_id,
+    paymentReference: order.payment_reference,
+  })
+
+  const incomingTransactionType = String(req.body?.transaction?.transactionType || "").toUpperCase()
+
   // Refund notifications are informational — the admin already recorded the
   // refund when it issued one, so there is nothing to settle here.
   if (String(req.body?.transaction?.transactionType || "").toUpperCase() === "REFUND") {
+    console.log("[raiaccept:webhook] refund notification ignored as informational", {
+      orderId: order.id,
+      transactionId: req.body?.transaction?.transactionId || null,
+      status: req.body?.transaction?.status || null,
+      statusCode: req.body?.transaction?.statusCode || null,
+    })
+
     return res.json({ received: true, matched: true, handled: "refund_notification" })
   }
 
   let confirmed
   try {
     // The webhook said something happened; RaiAccept says what.
+    console.log("[raiaccept:webhook] verifying transactions with RaiAccept", {
+      orderId: order.id,
+      raiacceptOrderId: order.raiaccept_order_id,
+    })
+
     confirmed = await raiaccept.listTransactions(order.raiaccept_order_id)
+
+    console.log("[raiaccept:webhook] RaiAccept verification response received", {
+      isArray: Array.isArray(confirmed),
+      hasTransactions: Array.isArray(confirmed?.transactions),
+      transactionCount: Array.isArray(confirmed) ? confirmed.length : confirmed?.transactions?.length || 0,
+      hasCard: Boolean(confirmed?.card),
+    })
   } catch (error) {
+    console.error("[raiaccept:webhook] RaiAccept verification failed", {
+      orderId: order.id,
+      raiacceptOrderId: order.raiaccept_order_id,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+    })
+
     // Their API is unreachable. Answer 5xx so the retry is actually useful.
     await logError({ kind: "server_error", error, req, status: 502 })
     return res.status(502).json({ received: false, message: "Could not verify with RaiAccept." })
   }
 
   const transactions = Array.isArray(confirmed) ? confirmed : confirmed.transactions || []
+
+  console.log("[raiaccept:webhook] confirmed transactions summary", {
+    orderId: order.id,
+    transactionCount: transactions.length,
+    transactions: transactions.map((t) => ({
+      transactionId: t.transactionId || null,
+      transactionType: t.transactionType || null,
+      status: t.status || null,
+      statusCode: t.statusCode || null,
+      statusMessage: t.statusMessage || null,
+      createdOn: t.createdOn || null,
+      updatedOn: t.updatedOn || null,
+    })),
+  })
+
   const purchase = transactions
     .filter((t) => String(t.transactionType || "").toUpperCase() === "PURCHASE")
     .sort((a, b) => new Date(b.updatedOn || b.createdOn || 0) - new Date(a.updatedOn || a.createdOn || 0))[0]
 
+  console.log("[raiaccept:webhook] selected purchase transaction", {
+    orderId: order.id,
+    foundPurchase: Boolean(purchase),
+    transactionId: purchase?.transactionId || null,
+    status: purchase?.status || null,
+    statusCode: purchase?.statusCode || null,
+    successful: purchase ? isSuccessful(purchase) : false,
+  })
+
   const card = req.body?.card || confirmed.card || null
 
+  console.log("[raiaccept:webhook] card info presence", {
+    orderId: order.id,
+    hasIncomingCard: Boolean(req.body?.card),
+    hasConfirmedCard: Boolean(confirmed?.card),
+    hasSelectedCard: Boolean(card),
+    cardType: card?.type || null,
+    maskedCardNumber: card?.maskedCardNumber || null,
+    hasCardToken: Boolean(card?.cardToken),
+  })
+
   if (purchase && isSuccessful(purchase)) {
+    console.log("[raiaccept:webhook] marking order paid", {
+      orderId: order.id,
+      transactionId: purchase?.transactionId || null,
+    })
+
     const result = await markPaid(order, { transaction: purchase, card })
+
+    console.log("[raiaccept:webhook] markPaid result", {
+      orderId: order.id,
+      changed: result.changed,
+      returnedOrderId: result.order?.id || null,
+      returnedPaymentStatus: result.order?.payment_status || null,
+    })
+
     return res.json({ received: true, matched: true, outcome: "paid", changed: result.changed })
   }
 
+  console.log("[raiaccept:webhook] marking order failed", {
+    orderId: order.id,
+    hasPurchase: Boolean(purchase),
+    fallbackTransactionId: req.body?.transaction?.transactionId || null,
+    fallbackStatus: req.body?.transaction?.status || null,
+    fallbackStatusCode: req.body?.transaction?.statusCode || null,
+  })
+
   const result = await markFailed(order, { transaction: purchase || req.body?.transaction })
+
+  console.log("[raiaccept:webhook] markFailed result", {
+    orderId: order.id,
+    changed: result.changed,
+    returnedOrderId: result.order?.id || null,
+    returnedStatus: result.order?.status || null,
+    returnedPaymentStatus: result.order?.payment_status || null,
+  })
+
   return res.json({ received: true, matched: true, outcome: "failed", changed: result.changed })
 }
 
