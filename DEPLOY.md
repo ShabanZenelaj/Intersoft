@@ -158,7 +158,7 @@ Open a terminal on `intersoft-api` (Coolify → the app → **Terminal**) and ru
 SEED_ADMIN_EMAIL=you@yourdomain.com SEED_ADMIN_PASSWORD='pick-a-real-password' npm run seed
 ```
 
-**Set both variables.** Without them the script falls back to `admin@intersoft.al / supersecret`, which is written in this repository — fine on a laptop, not on something with a public domain. It prints a warning when it falls back, so you will not do it by accident. Passing them inline as above keeps the password out of Coolify's stored environment; it lives only in that terminal session.
+**Set both variables.** Without them the script falls back to `admin@intersoft-rks.com / supersecret`, which is written in this repository — fine on a laptop, not on something with a public domain. It prints a warning when it falls back, so you will not do it by accident. Passing them inline as above keeps the password out of Coolify's stored environment; it lives only in that terminal session.
 
 What you get: 1 admin, 3 shipping methods, 3 suppliers, 19 categories, 38 products with 46 variants, a `Sale` price list with 7 discounted variants, and a working `WELCOME10` code for 10% off. Stock is 20 per variant.
 

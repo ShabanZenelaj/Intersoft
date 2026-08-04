@@ -1,5 +1,6 @@
 const { query, tx } = require("../../db")
 const { check, isUuid, money } = require("../../lib/util")
+const { logError } = require("../../lib/error-log")
 const { orderToJson } = require("../../lib/serialize")
 const { getCart, cartContext } = require("../../services/cart")
 const campaignService = require("../../services/campaigns")
@@ -181,6 +182,57 @@ const startCardPayment = async (order, req) => {
   return checkout
 }
 
+/**
+ * Undoes a placed order whose payment session could never be created.
+ *
+ * The order is committed before RaiAccept is called — it has to be, because
+ * their merchantOrderReference is built from the display_id. So when their API
+ * rejects the payload or is unreachable, an order exists that the shopper has no
+ * way to pay for and no webhook will ever settle: `markFailed` only runs from
+ * the notification, and there is no notification for an order they never
+ * created. Left alone it holds stock forever.
+ *
+ * Three pieces of state have to come back, or the retry is worse than the
+ * failure: stock, the campaign redemption (a `usage_limit: 1` code would
+ * otherwise be spent on the attempt that failed), and the cart itself.
+ */
+const unwindUnpaidOrder = async (order, cartId) => {
+  await tx(async (client) => {
+    // Guard on the current status so this cannot double-restock if it is ever
+    // reached twice for the same order.
+    const { rows } = await client.query(
+      "update orders set status = 'canceled', updated_at = now() where id = $1 and status = 'pending' returning id",
+      [order.id]
+    )
+    if (!rows.length) return
+
+    for (const item of order.items || []) {
+      await client.query("update variants set stock = stock + $1 where id = $2 and manage_stock", [
+        item.quantity,
+        item.variant_id,
+      ])
+    }
+
+    // Release the redemptions this attempt recorded, and give back the usage.
+    const { rows: released } = await client.query(
+      "delete from campaign_redemptions where order_id = $1 returning campaign_id",
+      [order.id]
+    )
+    for (const row of released) {
+      await client.query(
+        "update campaigns set used_count = greatest(used_count - 1, 0) where id = $1",
+        [row.campaign_id]
+      )
+    }
+
+    await client.query("update carts set status = 'open', updated_at = now() where id = $1", [cartId])
+    await client.query("insert into order_events (order_id, type, data) values ($1, 'status_changed', $2)", [
+      order.id,
+      JSON.stringify({ from: "pending", to: "canceled", reason: "payment_session_failed", restocked: true }),
+    ])
+  })
+}
+
 const complete = async (req, res) => {
   const cart = await loadOpenCart(req.params.id)
   check(cart.items.length, "The cart is empty.")
@@ -274,7 +326,26 @@ const complete = async (req, res) => {
   // RaiAccept. Hand back the payment window instead of a confirmation, and
   // hold the email until the webhook says the money actually moved.
   if (payments.isRedirectMethod(order.payment_method)) {
-    const checkout = await startCardPayment(order, req)
+    let checkout
+    try {
+      checkout = await startCardPayment(order, req)
+    } catch (error) {
+      // Put everything back before answering, so the shopper can simply try
+      // again — with their cart, their stock and their promo code intact.
+      await unwindUnpaidOrder(order, cart.id)
+
+      // Answered here rather than rethrown. The central handler replaces every
+      // 5xx body with "Internal server error", which would hide the one thing
+      // worth telling the shopper — that their cart survived. It also records
+      // only message and stack, so wrapping this in a friendlier error would
+      // discard the RaiAccept detail saying *why* the session failed. Log the
+      // original, answer with the useful one.
+      console.error(error)
+      logError({ kind: "server_error", error, req, status: 502 })
+      return res.status(502).json({
+        message: "We could not open the payment window. Your cart is unchanged — please try again.",
+      })
+    }
     return res.json({
       type: "payment_required",
       order: orderToJson(order),
