@@ -134,7 +134,10 @@ const request = async (method, path, body, { retryOnAuthFailure = true } = {}) =
       payload.message ||
       payload.raw ||
       "no detail"
-    throw fail(`RaiAccept ${method} ${path} failed (${response.status}): ${detail}`)
+    const error = fail(`RaiAccept ${method} ${path} failed (${response.status}): ${detail}`)
+    // Their status, kept separate from the one we answer our own caller with.
+    error.upstreamStatus = response.status
+    throw error
   }
   return payload
 }
@@ -220,12 +223,8 @@ const createCheckout = async (args) => {
   const orderIdentification = created.orderIdentification
   if (!orderIdentification) throw fail("RaiAccept created no order identification.")
 
-  console.log(payload, "------> Raiaccept payload");
-
   const session = await request("POST", `/orders/${encodeURIComponent(orderIdentification)}/checkout`, payload)
   if (!session.paymentRedirectURL) throw fail("RaiAccept created no payment session.")
-
-  console.log(session, "------> Raiaccept session");
 
   return {
     orderIdentification,
@@ -240,8 +239,27 @@ const createCheckout = async (args) => {
 const getOrder = (orderIdentification) =>
   request("GET", `/orders/${encodeURIComponent(orderIdentification)}`)
 
-const listTransactions = (orderIdentification) =>
-  request("POST", `/orders/${encodeURIComponent(orderIdentification)}/transactions`)
+/**
+ * Their docs document this as `POST .../transactions`, but the live API answers
+ * POST with `405 HTTP request method is not supported`. GET is what actually
+ * works, and matches the sibling single-transaction endpoint below.
+ *
+ * Both are attempted because of what this call decides. It is what settles a
+ * paid order: if it throws, the webhook answers 5xx, RaiAccept gives up after
+ * three retries, and a shopper whose card was charged is left looking at an
+ * unpaid order while its stock stays held. Not worth risking on one reading of
+ * a document their own server contradicts — so the undocumented-but-working
+ * verb is tried first and the documented one kept as a fallback.
+ */
+const listTransactions = async (orderIdentification) => {
+  const path = `/orders/${encodeURIComponent(orderIdentification)}/transactions`
+  try {
+    return await request("GET", path)
+  } catch (error) {
+    if (error.upstreamStatus !== 405) throw error
+    return request("POST", path)
+  }
+}
 
 const getTransaction = (orderIdentification, transactionId) =>
   request("GET", `/orders/${encodeURIComponent(orderIdentification)}/transactions/${encodeURIComponent(transactionId)}`)
