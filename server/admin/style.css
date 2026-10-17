@@ -339,6 +339,65 @@ legend { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 6px;
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 
+/* ---------------------------------------------------------------- Pro-Data */
+.nav-count {
+  margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 999px; background: var(--amber);
+  color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 17px;
+}
+.nav-count.red { background: var(--red); }
+#nav a.active .nav-count { background: #fff; color: var(--primary); }
+
+.tabs { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.tabs button {
+  border: none; background: none; padding: 8px 12px; font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.notice {
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 8px;
+  font-size: 13px; line-height: 1.55; margin-bottom: 14px; border: 1px solid var(--border); background: #f8fafc;
+}
+.notice .ico { flex-shrink: 0; margin-top: 2px; width: 16px; height: 16px; }
+.notice > div { flex: 1; min-width: 0; }
+.notice .row { margin-top: 8px; }
+.notice.amber { background: var(--amber-bg); border-color: transparent; }
+.notice.amber .ico { color: var(--amber); }
+.notice.red { background: var(--red-bg); border-color: transparent; }
+.notice.red .ico { color: var(--red); }
+.notice.blue { background: var(--blue-bg); border-color: transparent; }
+.notice.blue .ico { color: var(--blue); }
+.notice.green { background: var(--green-bg); border-color: transparent; }
+.notice.green .ico { color: var(--green); }
+.card > .notice { margin: 14px 18px 0; }
+
+.bulkbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 18px; border-bottom: 1px solid var(--border); background: #fafbfc; }
+th.pick, td.pick { width: 40px; padding-right: 0; }
+td.pick input, th.pick input { width: 16px; height: 16px; }
+
+.job-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.job { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow-sm); }
+.job h3 { margin: 0; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.job .every { font-size: 12px; margin-top: 2px; }
+.job .last { font-size: 12.5px; margin: 10px 0; line-height: 1.5; min-height: 38px; }
+.job .row { justify-content: space-between; }
+
+.picker-results { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+.picker-results button {
+  display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid var(--border);
+  background: none; padding: 9px 12px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.picker-results button:hover, .picker-results button:focus { background: #eef2ff; outline: none; }
+.picker-results button:last-child { border-bottom: none; }
+.picker-results .muted { font-size: 12px; }
+
+.warehouse-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 14px; }
+.order-group { border-bottom: 1px solid var(--border); }
+.order-group:last-child { border-bottom: none; }
+.order-group .card-body { padding-top: 12px; padding-bottom: 12px; }
+.line-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
 /* ---------------------------------------------------------------- toast */
 .toast {
   position: fixed; bottom: 22px; right: 22px; background: #101828; color: #fff; padding: 12px 18px;

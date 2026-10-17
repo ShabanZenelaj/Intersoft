@@ -28,7 +28,10 @@ const listProducts = async (filters = {}) => {
     where.push(clause.replace("?", `$${params.length}`))
   }
 
-  add("p.status = ?", filters.status || "published")
+  // The storefront never passes a status and must only ever see published
+  // products. The admin passes "any" to see drafts alongside them.
+  if (filters.status !== "any") add("p.status = ?", filters.status || "published")
+  if (filters.imported) where.push("p.metadata->>'imported_from' = 'prodata'")
   if (filters.handle) add("p.handle = ?", filters.handle)
   if (filters.q) {
     params.push(`%${filters.q}%`)

@@ -21,6 +21,16 @@ const loadOpenCart = async (cartId) => {
   return cart
 }
 
+/**
+ * For a product hidden after the shopper put it in their cart — unpublished
+ * by an admin, say. It can still be removed; it just cannot be bought.
+ */
+const noLongerAvailable = (title) => {
+  const error = new Error(`"${title}" is no longer available. Remove it from your cart to continue.`)
+  error.status = 400
+  return error
+}
+
 const create = async (req, res) => {
   const { rows } = await query("insert into carts (customer_id, email) values ($1, $2) returning id", [
     req.customer?.id || null,
@@ -37,7 +47,15 @@ const addItem = async (req, res) => {
   const cart = await loadOpenCart(req.params.id)
   const { variant_id, quantity: qty } = req.body
 
-  const { rows: variants } = await query("select * from variants where id = $1", [variant_id])
+  // Only versions of published products can be bought. A draft — including
+  // every product imported from Pro-Data before an admin has reviewed it — is
+  // answered exactly like a variant that does not exist, so its id reveals
+  // nothing to someone who has it.
+  const { rows: variants } = await query(
+    `select v.* from variants v join products p on p.id = v.product_id
+      where v.id = $1 and p.status = 'published'`,
+    [variant_id]
+  )
   check(variants.length, "Variant not found.")
   const variant = variants[0]
 
@@ -62,6 +80,14 @@ const updateItem = async (req, res) => {
 
   const item = cart.items.find((entry) => entry.id === req.params.itemId)
   check(item, "Item not found.")
+  // Removing a hidden product stays possible (removeItem); taking more of it
+  // does not.
+  const { rows: published } = await query(
+    `select 1 from variants v join products p on p.id = v.product_id
+      where v.id = $1 and p.status = 'published'`,
+    [item.variant_id]
+  )
+  if (!published.length) throw noLongerAvailable(item.product_title)
   if (item.stock !== null && qty > item.stock) {
     return res.status(400).json({ message: "Not enough stock available." })
   }
@@ -242,6 +268,19 @@ const complete = async (req, res) => {
   const paymentData = await payments.authorize(cart.payment_method, {})
 
   const order = await tx(async (client) => {
+    // Everything must still be for sale: a product can be hidden after it
+    // went into the cart. The product rows are share-locked, so one also
+    // cannot be hidden between this check and the order being written — an
+    // admin unpublishing it waits for this checkout to finish. (Products are
+    // locked before variants, the same order an admin save takes them in.)
+    const { rows: products } = await client.query(
+      "select id, status from products where id = any($1::uuid[]) for share",
+      [[...new Set(cart.items.map((item) => item.product_id))]]
+    )
+    const statusById = new Map(products.map((product) => [product.id, product.status]))
+    const hidden = cart.items.find((item) => statusById.get(item.product_id) !== "published")
+    if (hidden) throw noLongerAvailable(hidden.product_title)
+
     // Re-check and decrement stock atomically.
     for (const item of cart.items) {
       const { rows } = await client.query(

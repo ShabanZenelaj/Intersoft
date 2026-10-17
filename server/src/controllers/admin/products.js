@@ -1,4 +1,4 @@
-const { query } = require("../../db")
+const { query, tx } = require("../../db")
 const { check, isUuid, money, pageParams } = require("../../lib/util")
 const { listProducts } = require("../../services/catalog")
 const { upsertProduct, getOrCreateSalePriceList } = require("../../services/products")
@@ -46,7 +46,9 @@ const list = async (req, res) => {
   const { limit, offset } = pageParams(req)
   const result = await listProducts({
     q: req.query.q,
-    status: req.query.status || undefined,
+    // No filter in the admin means every product, drafts included.
+    status: req.query.status || "any",
+    imported: req.query.imported === true,
     categoryId: isUuid(req.query.category_id) ? req.query.category_id : undefined,
     order: req.query.order || "-created_at",
     limit,
@@ -73,7 +75,17 @@ const update = async (req, res) => {
 }
 
 const remove = async (req, res) => {
-  await query("delete from products where id = $1", [req.params.id])
+  await tx(async (client) => {
+    // Deleting a product that came from Pro-Data means "not for the web". Its
+    // item is set aside as ignored so the next catalog sync does not offer it
+    // again; it can be restored from the Inbox's Ignored tab.
+    await client.query(
+      `update inventory_items set ignored = true
+        where id in (select inventory_item_id from variants where product_id = $1 and inventory_item_id is not null)`,
+      [req.params.id]
+    )
+    await client.query("delete from products where id = $1", [req.params.id])
+  })
   res.json({ success: true })
 }
 

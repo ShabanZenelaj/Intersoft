@@ -58,6 +58,8 @@ const list = {
   query: Joi.object({
     q: Joi.string().max(200).allow(""),
     status: Joi.string().valid("published", "draft").allow(""),
+    // Only products that came in from Pro-Data.
+    imported: flag,
     category_id: uuid,
     order: Joi.string().max(50),
     ...pagination,

@@ -112,8 +112,16 @@ MAIL_FROM=Intersoft <no-reply@yourdomain.com>
 RAIACCEPT_USERNAME=
 RAIACCEPT_PASSWORD=
 
-# Optional — the admin's "write it for me" product copy assistant.
+# Optional — the admin's "write it for me" product copy assistant. Also writes
+# the Albanian and English text for items imported from Pro-Data.
 OPENAI_API_KEY=
+
+# Pro-Data (the inventory app). Leave PRODATA_URL blank to keep the
+# integration off — nothing runs and nothing is sent. See section 6.
+PRODATA_URL=
+PRODATA_USERNAME=
+PRODATA_PASSWORD=
+PRODATA_UNIQUEIDENT=
 ```
 
 **Domain:** `https://api.yourdomain.com`. Coolify issues the certificate through Traefik.
@@ -212,6 +220,44 @@ Set `NEW_ADMIN_PASSWORD` as a temporary environment variable, run it, then remov
 2. Confirm `PUBLIC_API_URL` is the real https domain. RaiAccept posts the payment result to `PUBLIC_API_URL/api/store/payments/raiaccept/webhook`, and a payment that cannot be confirmed leaves the order unpaid.
 3. If anything filters inbound traffic, allow their webhook range `18.96.33.128/29`.
 4. Place a sandbox order and watch it move to **paid** in the admin.
+
+---
+
+## 6. Pro-Data (when you have credentials)
+
+The shop brings products in from Pro-Data, sends each order to it, and keeps stock in step. Everything is under **Pro-Data** in the admin sidebar.
+
+**1. Ask Pro-Data for an API user made just for the web shop.** In Pro-Data a user belongs to a *subjekt*, and every order the API places lands under that subjekt as the buyer. Make it one called something like "Intersoft Online", so web orders are easy to tell apart from shop-floor sales. A dedicated user also means the integration's password is not anyone's own.
+
+**2. Set the variables** and redeploy the API:
+
+```bash
+# The address ending in /RestAPI — the part before /Swagger in their docs link.
+PRODATA_URL=https://your-prodata-server/RestAPI
+PRODATA_USERNAME=intersoft-online
+PRODATA_PASSWORD=
+# Only if Pro-Data gave you one.
+PRODATA_UNIQUEIDENT=
+```
+
+**3. In the admin, open Pro-Data → Sync status** and press **Test the connection**. Then:
+
+- Wait for the first catalog sync (about a minute for ~20,000 items) or press **Run now** on *Catalog*.
+- Under **Where imported items land**, match Pro-Data's classifications to your categories.
+- Under **Which warehouses count**, tick the warehouses the website may sell from. The list fills in after the first stock check, which happens as soon as a product is imported or linked.
+
+**4. Place one real test order** for a linked product, move it to *Being prepared*, and check it appears in Pro-Data with `WEB #…` in its comment. Then have staff cancel it there. Within 15 minutes the order page shows **Canceled in Pro-Data**.
+
+**Things staff need to know**
+
+- **An order reaches Pro-Data when it leaves "New"** — normally when you mark it *Being prepared*. Pending orders are not sent.
+- **It arrives as a sales order, not a sale.** Pro-Data only takes the stock down when staff turn the order into an invoice. Until then the website subtracts it itself, so nothing is sold twice.
+- **Pro-Data's API cannot cancel an order.** When an order is canceled in the shop after Pro-Data has it, its page says so in red and asks for it to be canceled in Pro-Data too. That clears by itself once Pro-Data shows it canceled.
+- **Refunds with restock** after sending show a reminder to record the return in Pro-Data as well.
+
+**⚠ Plain `http://` addresses are not encrypted.** Pro-Data's demo runs on plain HTTP, and its sign-in sends the password in the address itself. If your instance is also `http://`, the password, the session token and every order cross the internet readable by anyone in between. The Sync status page shows a red warning in that case. Ask Pro-Data for an `https://` address. If theirs uses a self-signed certificate, the API needs a small addition to trust exactly that certificate — ask for it then; it is not built yet.
+
+**Their API's quirks, handled in `server/src/services/prodata.js`** (worth knowing if something looks odd): errors come back as HTTP 200 with `hasError: true`; an empty cart is a 404; their bulk-order endpoint is broken on their side, so orders go line by line through the cart; the stock endpoint's paged listing skips items, so stock is read one item at a time.
 
 ---
 

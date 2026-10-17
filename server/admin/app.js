@@ -133,6 +133,7 @@
     $("#admin-email").textContent = admin.email
     $("#admin-initial").textContent = (admin.name || admin.email || "A").trim().charAt(0)
     route()
+    refreshInventoryBadges()
   }
 
   // Mobile: the sidebar slides over the content.
@@ -479,8 +480,10 @@
   }
 
   const dashboardView = async () => {
-    const stats = await api("/stats")
+    const [stats, proData] = await Promise.all([api("/stats"), refreshInventoryBadges()])
     const hasOrders = stats.recent_orders.length > 0
+    const pd = proData?.configured ? proData.counts : null
+    const pdProblems = pd ? pd.push_problems + pd.void_required + pd.canceled_in_prodata : 0
 
     main.innerHTML = `
       <div class="page-head">
@@ -503,6 +506,23 @@
         <div class="kpi"><div class="label">Low stock items</div><div class="value">${stats.low_stock.length}</div>
           <div class="foot muted">${stats.low_stock.length ? "Restock them soon" : "Stock levels are healthy"}</div></div>
       </div>
+
+      ${pd
+        ? `<div class="kpis">
+            <div class="kpi link" data-go="#/products" data-filter="review"><div class="label">From Pro-Data, to review</div>
+              <div class="value">${pd.drafts_to_review}</div>
+              <div class="foot muted">${pd.import_queue ? `${pd.import_queue} more being prepared` : pd.drafts_to_review ? "Check them, then make them visible" : "Nothing waiting"}</div></div>
+            <div class="kpi link" data-go="#/inventory/links"><div class="label">Sales waiting for a link</div>
+              <div class="value">${pd.needs_linking}</div>
+              <div class="foot muted">${pd.needs_linking ? "These orders can't reach Pro-Data yet" : "Every sale has an item"}</div></div>
+            <div class="kpi link" data-go="#/inventory/status"><div class="label">Pro-Data problems</div>
+              <div class="value" ${pdProblems ? `style="color:var(--red)"` : ""}>${pdProblems}</div>
+              <div class="foot muted">${pdProblems ? "Orders that need you" : "All in step"}</div></div>
+            <div class="kpi link" data-go="#/inventory"><div class="label">New in Pro-Data</div>
+              <div class="value">${pd.new_items}</div>
+              <div class="foot muted">Items not in the shop yet</div></div>
+          </div>`
+        : ""}
 
       <div class="card">
         <div class="card-head">Sales over the last 14 days</div>
@@ -557,19 +577,30 @@
       })
     )
     main.querySelectorAll(".kpi.link").forEach((tile) =>
-      tile.addEventListener("click", () => (location.hash = tile.dataset.go.split("?")[0]))
+      tile.addEventListener("click", () => {
+        if (tile.dataset.filter) nextProductsFilter = { status: tile.dataset.filter }
+        location.hash = tile.dataset.go.split("?")[0]
+      })
     )
   }
 
   // ---------------------------------------------------------------- products
 
+  // A filter handed over by another screen (the dashboard's Pro-Data tile),
+  // since routes here carry no query string.
+  let nextProductsFilter = null
+
   const productsView = async (params = {}) => {
+    if (nextProductsFilter) {
+      params = { ...nextProductsFilter, ...params }
+      nextProductsFilter = null
+    }
     const offset = Number(params.offset) || 0
     const q = params.q || ""
     const status = params.status || ""
-    const data = await api(
-      `/products?limit=25&offset=${offset}&q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}`
-    )
+    // "review" = drafts that came in from Pro-Data and still need a look.
+    const filterQuery = status === "review" ? "&status=draft&imported=true" : status ? `&status=${status}` : ""
+    const data = await api(`/products?limit=25&offset=${offset}&q=${encodeURIComponent(q)}${filterQuery}`)
     const isFiltered = Boolean(q || status)
     main.innerHTML = `
       <div class="page-head">
@@ -582,6 +613,7 @@
           <option value="">All products</option>
           <option value="published" ${status === "published" ? "selected" : ""}>Visible in the shop</option>
           <option value="draft" ${status === "draft" ? "selected" : ""}>Hidden (draft)</option>
+          <option value="review" ${status === "review" ? "selected" : ""}>From Pro-Data · to review</option>
         </select>
       </div>
       <div class="card">
@@ -695,7 +727,10 @@
       return { added, removed }
     }
 
+    let stockFromProData = new Set()
+
     const readInputs = () => {
+      if (!root) return
       root.querySelectorAll("[data-variant-index]").forEach((row) => {
         const index = Number(row.dataset.variantIndex)
         const variant = variants[index]
@@ -760,7 +795,12 @@
                       <td><input name="v_sku" value="${esc(variant.sku)}" placeholder="optional" /></td>
                       <td><input name="v_price" type="number" step="0.01" min="0" value="${esc(variant.price)}" /></td>
                       <td><input name="v_sale" type="number" step="0.01" min="0" value="${esc(variant.sale_price)}" placeholder="—" /></td>
-                      <td><input name="v_stock" type="number" step="1" min="0" value="${esc(variant.stock)}" /></td>
+                      <td>${
+                        variant.id && stockFromProData.has(variant.id)
+                          ? `<input name="v_stock" type="number" value="${esc(variant.stock)}" readonly
+                               title="Comes from Pro-Data every 10 minutes" style="background:var(--bg)" />`
+                          : `<input name="v_stock" type="number" step="1" min="0" value="${esc(variant.stock)}" />`
+                      }</td>
                       <td style="text-align:center"><input name="v_manage" type="checkbox" ${variant.manage_stock ? "checked" : ""} /></td>
                     </tr>`
                   )
@@ -818,6 +858,16 @@
     return {
       mount(element) {
         root = element
+        render()
+      },
+      /**
+       * Versions whose stock Pro-Data sets. Their stock field is shown but
+       * locked: the server keeps the synced number whatever the form sends,
+       * so an editable box would only mislead.
+       */
+      lockStock(variantIds) {
+        readInputs()
+        stockFromProData = new Set(variantIds)
         render()
       },
       /** Product payload pieces: options definition + variant rows. */
@@ -920,6 +970,8 @@
 
       <div id="variant-editor"></div>
 
+      <div id="prodata-panel"></div>
+
       <div class="card"><div class="card-head">Albanian text
           <span class="muted">Leave empty to show the English text to Albanian shoppers</span></div>
         <div class="card-body form-grid">
@@ -946,6 +998,7 @@
 
     images.mount($("#p_images"))
     variantEditor.mount($("#variant-editor"))
+    if (!isNew) mountProDataPanel(id, product, variantEditor, $("#prodata-panel"))
 
     // Picking a supplier suggests their shipping option (still overridable).
     $("#p_supplier").addEventListener("change", (event) => {
@@ -1205,7 +1258,11 @@
   }
 
   const orderDetailView = async (id) => {
-    const { order } = await api(`/orders/${id}`)
+    const [{ order }, proData] = await Promise.all([
+      api(`/orders/${id}`),
+      // The panel is extra; the order page must still open if it fails.
+      api(`/inventory/orders/${id}`).catch(() => null),
+    ])
     const address = order.shipping_address || {}
     const nextStatuses = { pending: ["processing", "canceled"], processing: ["shipped", "canceled"], shipped: ["delivered"], delivered: [], canceled: [] }[order.status] || []
     const remaining = order.total - order.refunded_total
@@ -1250,6 +1307,8 @@
         </div>
       </div>
 
+      ${proDataOrderPanel(proData, order)}
+
       <div class="card"><div class="card-head">Customer & delivery</div><div class="card-body">
         <p>${esc(address.first_name)} ${esc(address.last_name)}${order.customer ? ` · <a href="#/customers/${esc(order.customer.id)}">registered customer</a>` : " · guest"}</p>
         <p class="muted">${esc(address.address_1)}, ${esc(address.city)} ${esc(address.postal_code)}, ${esc(String(address.country_code || "").toUpperCase())}${address.phone ? ` · ${esc(address.phone)}` : ""}</p>
@@ -1275,6 +1334,10 @@
               : event.type === "payment_captured" ? `Payment captured by ${esc(data.by)}`
               : event.type === "refunded" ? `Refunded ${eur(data.amount)}${data.reason ? ` — ${esc(data.reason)}` : ""}${data.restock ? " (restocked)" : ""} by ${esc(data.by)}`
               : event.type === "note" ? `📝 ${esc(data.note)} <span class="muted">— ${esc(data.by)}</span>`
+              : event.type === "inventory_sent" ? `Sent to Pro-Data as ${esc(data.pro_data_order_id)}${data.note ? ` <span class="muted">— ${esc(data.note)}</span>` : ""}`
+              : event.type === "inventory_status"
+                ? `Pro-Data: ${esc(PRODATA_STATUS[data.from]?.[1] || "sent")} → ${esc(PRODATA_STATUS[data.to]?.[1] || data.to)}${
+                    data.warning ? ` <span class="badge red">but the order is still live here</span>` : ""}`
               : esc(event.type)
             return `<li>${text}<div class="when">${esc(when(event.created_at))}</div></li>`
           })
@@ -1287,9 +1350,14 @@
       button.addEventListener("click", async () => {
         const status = button.dataset.status
         if (status === "canceled") {
+          const inProData = proData?.push?.state === "sent" && proData.push.pro_data_status !== "A"
           const ok = await confirmDialog({
             title: `Cancel order #${order.display_id}?`,
-            message: "The items go back into stock and the customer is emailed about the cancellation.",
+            message:
+              "The items go back into stock and the customer is emailed about the cancellation." +
+              (inProData
+                ? ` Pro-Data already has this order (${proData.push.pro_data_order_id}) and can't be canceled from here — cancel it in Pro-Data too. This page will remind you.`
+                : ""),
             confirmLabel: "Cancel this order",
           })
           if (!ok) return
@@ -1371,6 +1439,10 @@
       await api(`/orders/${id}/notes`, { method: "POST", body: { note } })
       orderDetailView(id)
     })
+
+    wireProDataOrderPanel(id, proData, () => orderDetailView(id))
+    // Status changes here can create or clear Pro-Data work; keep the sidebar honest.
+    if (proData?.configured) refreshInventoryBadges()
   }
 
   // ---------------------------------------------------------------- customers
@@ -2266,7 +2338,7 @@
   // ---------------------------------------------------------------- settings
 
   const settingsView = async () => {
-    const [me, aiStatus] = await Promise.all([api("/auth/me"), api("/ai/status")])
+    const [me, aiStatus, proData] = await Promise.all([api("/auth/me"), api("/ai/status"), refreshInventoryBadges()])
 
     main.innerHTML = `
       <div class="page-head">
@@ -2297,6 +2369,11 @@
             <tr><td class="cell-title">Card payments online</td>
               <td class="muted">Cash on delivery and card-on-delivery always work. Online card payment needs your bank's details.</td>
               <td class="num"><span class="badge amber">Test mode</span></td></tr>
+            <tr><td class="cell-title"><a href="#/inventory/status">Pro-Data</a></td>
+              <td class="muted">Brings products in from Pro-Data, sends orders to it and keeps stock in step.</td>
+              <td class="num">${proData?.configured
+                ? proData.plain_http ? `<span class="badge amber">On — not encrypted</span>` : `<span class="badge green">On</span>`
+                : `<span class="badge">Off</span>`}</td></tr>
           </tbody>
         </table>
         <p class="field-note">These are set up once by your developer in the server settings file. Ask them if you need one turned on.</p>
@@ -2315,6 +2392,898 @@
       } catch (error) {
         toast(error.message, true)
       }
+    })
+  }
+
+  // ---------------------------------------------------------------- Pro-Data
+  //
+  // Pro-Data is the inventory app the business keeps its products in and
+  // sends orders to. These screens: the Inbox (its catalog, to import from),
+  // Needs linking (sales waiting for an item), Sync status, and the panels on
+  // the product and order pages.
+
+  /** What each import flag means, in the words the manager needs. */
+  const IMPORT_FLAGS = {
+    uncategorized: "It has no category — its Pro-Data classification isn't matched to one of yours yet.",
+    no_images: "Pro-Data had no photos for it.",
+    no_price: "Pro-Data has no price for it. Set one before showing it in the shop.",
+    not_enriched: "The writing assistant didn't write text for it, so it still uses Pro-Data's name.",
+  }
+
+  const PUSH_STATE = {
+    waiting_links: ["amber", "Waiting for a link"],
+    queued: ["blue", "About to be sent"],
+    sending: ["blue", "Sending now"],
+    sent: ["green", "In Pro-Data"],
+    failed: ["red", "Not sent yet — will try again"],
+    needs_check: ["red", "Needs checking"],
+    dismissed: ["", "Not sent"],
+  }
+  const PRODATA_STATUS = {
+    H: ["blue", "Open in Pro-Data"],
+    M: ["green", "Invoiced in Pro-Data"],
+    A: ["red", "Canceled in Pro-Data"],
+  }
+  const stateBadge = ([color, label]) => `<span class="badge ${color}">${esc(label)}</span>`
+
+  const notice = (color, html, iconName = color === "green" ? "check" : "warn") =>
+    `<div class="notice ${color}">${icon(iconName)}<div>${html}</div></div>`
+
+  let inventoryStatus = null
+
+  /** Refreshes the sidebar's Pro-Data counts, and keeps the status for other screens. */
+  const refreshInventoryBadges = async () => {
+    try {
+      const status = await api("/inventory/status")
+      inventoryStatus = status
+      const c = status.counts
+      const set = (key, value, red = false) => {
+        const el = document.querySelector(`[data-count="${key}"]`)
+        if (!el) return
+        el.textContent = value > 999 ? "999+" : String(value)
+        el.classList.toggle("hidden", !value)
+        el.classList.toggle("red", red)
+      }
+      const failingJobs = Object.values(status.jobs).filter((job) => job.enabled && job.last_run && !job.last_run.ok).length
+      set("inbox", status.configured ? c.new_items : 0)
+      set("links", c.needs_linking)
+      set("problems", c.push_problems + c.void_required + c.canceled_in_prodata + c.import_failed + failingJobs, true)
+      return status
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Choose a Pro-Data item. Searches the shop's own copy of the catalog as you
+   * type, so it is instant and never waits on Pro-Data. Resolves with the
+   * chosen item, or null when dismissed.
+   */
+  const pickInventoryItem = ({ title, message, confirmLabel = "Use this item" }) => {
+    let chosen = null
+    return openModal({
+      title,
+      message,
+      iconName: "link",
+      danger: false,
+      wide: true,
+      confirmLabel,
+      body: `
+        <label>Search Pro-Data by name, code or barcode
+          <input id="pick_q" type="search" placeholder="e.g. RTX 4070, or its code" autocomplete="off" /></label>
+        <div class="picker-results" id="pick_results">
+          <p class="muted" style="padding:10px 12px;margin:0">Start typing to search.</p></div>
+        <p id="pick_chosen" class="muted" style="margin:10px 0 0"></p>
+        <p class="form-error modal-error hidden"></p>`,
+      onOpen: (root) => {
+        const input = root.querySelector("#pick_q")
+        const results = root.querySelector("#pick_results")
+        let timer
+        let latest = 0
+        const search = async () => {
+          const q = input.value.trim()
+          if (!q) {
+            results.innerHTML = `<p class="muted" style="padding:10px 12px;margin:0">Start typing to search.</p>`
+            return
+          }
+          const mine = ++latest
+          const data = await api(`/inventory/items?tab=linkable&limit=30&q=${encodeURIComponent(q)}`)
+          if (mine !== latest) return // a newer search already answered
+          results.innerHTML = data.items.length
+            ? data.items
+                .map(
+                  (item) => `<button type="button" data-id="${esc(item.id)}">
+                    <strong>${esc(item.name || item.code)}</strong>
+                    <div class="muted">${esc(item.code)}${item.price !== null ? ` · ${eur(item.price)}` : ""}${
+                      item.available !== null ? ` · ${item.available} in stock` : ""}${
+                      item.product ? ` · already in the shop as “${esc(item.product.title)}”` : ""}</div>
+                  </button>`
+                )
+                .join("")
+            : `<p class="muted" style="padding:10px 12px;margin:0">Nothing in Pro-Data matches “${esc(q)}”.</p>`
+          results.querySelectorAll("button").forEach((button) =>
+            button.addEventListener("click", () => {
+              chosen = data.items.find((item) => item.id === button.dataset.id)
+              results.querySelectorAll("button").forEach((other) => (other.style.background = ""))
+              button.style.background = "#eef2ff"
+              root.querySelector("#pick_chosen").innerHTML =
+                `Chosen: <strong>${esc(chosen.name || chosen.code)}</strong> <span class="muted">(${esc(chosen.code)})</span>`
+            })
+          )
+        }
+        input.addEventListener("input", () => {
+          clearTimeout(timer)
+          timer = setTimeout(() => search().catch((error) => toast(error.message, true)), 250)
+        })
+      },
+      collect: (root) => {
+        if (!chosen) {
+          modalError(root, "Choose an item from the list first.")
+          return undefined
+        }
+        return chosen
+      },
+    })
+  }
+
+  /** Waits for a job's next run to finish, polling the status. Gives up quietly after a few minutes. */
+  const waitForJob = async (job, before) => {
+    for (let i = 0; i < 120; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const status = await refreshInventoryBadges()
+      const run = status?.jobs[job]?.last_run
+      if (run && run.finished_at !== before) return run
+    }
+    return null
+  }
+
+  const runJobNow = async (job, { label, body = {}, after } = {}) => {
+    const before = inventoryStatus?.jobs[job]?.last_run?.finished_at
+    try {
+      const result = await api(`/inventory/jobs/${job}/run`, { method: "POST", body })
+      toast(result.started ? `${label || "Sync"} started — this can take a minute.` : result.message)
+      if (!result.started) return
+      const run = await waitForJob(job, before)
+      if (run) toast(run.ok ? `${label || "Sync"} finished.` : `${label || "Sync"} failed: ${run.error}`, !run.ok)
+      after?.()
+    } catch (error) {
+      toast(error.message, true)
+    }
+  }
+
+  // ---------------------------------------------------------------- Pro-Data: Inbox
+
+  const INBOX_TABS = [
+    ["new", "New"],
+    ["imported", "In the shop"],
+    ["ignored", "Ignored"],
+    ["removed", "Removed from Pro-Data"],
+    ["all", "Everything"],
+  ]
+  const inbox = { tab: "new", q: "", category: "", sub_category: "", has_images: false, offset: 0, selected: new Set() }
+  let inboxPoll = null
+
+  const inventoryInboxView = async () => {
+    clearTimeout(inboxPoll)
+    const params = new URLSearchParams({ tab: inbox.tab, limit: "50", offset: String(inbox.offset) })
+    if (inbox.q) params.set("q", inbox.q)
+    if (inbox.category) params.set("category", inbox.category)
+    if (inbox.sub_category) params.set("sub_category", inbox.sub_category)
+    if (inbox.has_images) params.set("has_images", "true")
+
+    const [status, data, classes] = await Promise.all([
+      refreshInventoryBadges(),
+      api(`/inventory/items?${params}`),
+      api("/inventory/classifications"),
+    ])
+    const lastSync = status?.jobs.catalog.last_run
+    const categories = [...new Set(classes.classifications.map((row) => row.category).filter(Boolean))]
+    const subCategories = classes.classifications
+      .filter((row) => row.category === inbox.category && row.sub_category)
+      .map((row) => row.sub_category)
+    const queue = status?.counts.import_queue || 0
+    const canPick = (item) => !item.product && !item.removed_at && !["queued", "running"].includes(item.job?.state)
+    const bulk = inbox.tab === "ignored" ? "restore" : ["new", "all"].includes(inbox.tab) ? "import" : null
+
+    const statusCell = (item) => {
+      if (item.product) {
+        return `<a class="badge ${item.product.status === "published" ? "green" : "blue"}" href="#/products/${esc(item.product.product_id)}">
+          ${item.product.status === "published" ? "In the shop" : "Draft — review it"}</a>`
+      }
+      if (["queued", "running"].includes(item.job?.state)) return `<span class="badge blue">Preparing…</span>`
+      if (item.removed_at) return `<span class="badge red">Removed from Pro-Data</span>`
+      if (item.ignored) return `<span class="badge">Ignored</span>`
+      if (item.job?.state === "failed") return `<span class="badge red" title="${esc(item.job.error || "")}">Import failed</span>`
+      return `<span class="muted">—</span>`
+    }
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div><h1>Pro-Data Inbox</h1>
+          <p class="sub">Items in Pro-Data. Pick the ones to sell online — each becomes a hidden draft you check before it goes live.</p></div>
+        <div class="row">
+          <span class="muted">${lastSync?.finished_at ? `Synced ${esc(when(lastSync.finished_at))}` : "Not synced yet"}</span>
+          <button class="btn" id="inv-sync" ${status?.configured ? "" : "disabled"}>${icon("sync", "ico sm")}Sync now</button>
+        </div>
+      </div>
+      ${status && !status.configured ? notice("amber", `Pro-Data isn't connected yet, so there is nothing to show. <a href="#/inventory/status">See what's needed</a>.`) : ""}
+      ${queue ? notice("blue", `Preparing ${queue} draft${queue === 1 ? "" : "s"} — photos and text take a few seconds each. This page updates by itself.`, "sync") : ""}
+      ${status?.counts.import_failed ? notice("red", `${status.counts.import_failed} import${status.counts.import_failed === 1 ? "" : "s"} failed. Hover over <strong>Import failed</strong> to see why, then select the item and import it again.`) : ""}
+      <div class="tabs">${INBOX_TABS.map(
+        ([key, label]) => `<button data-tab="${key}" class="${inbox.tab === key ? "active" : ""}">${esc(label)}${
+          key === "new" && status?.counts.new_items ? ` <span class="muted">${status.counts.new_items}</span>` : ""}</button>`
+      ).join("")}</div>
+      <div class="toolbar">
+        ${searchBox("inv_q", "Search name, code or barcode…", inbox.q)}
+        <select id="inv_cat"><option value="">Every classification</option>${categories
+          .map((name) => `<option value="${esc(name)}" ${name === inbox.category ? "selected" : ""}>${esc(name)}</option>`)
+          .join("")}</select>
+        ${inbox.category && subCategories.length
+          ? `<select id="inv_sub"><option value="">All of ${esc(inbox.category)}</option>${subCategories
+              .map((name) => `<option value="${esc(name)}" ${name === inbox.sub_category ? "selected" : ""}>${esc(name)}</option>`)
+              .join("")}</select>`
+          : ""}
+        <label class="checkbox"><input type="checkbox" id="inv_img" ${inbox.has_images ? "checked" : ""} /> Only items with photos</label>
+      </div>
+      <div class="card">
+        ${bulk && data.items.length
+          ? `<div class="bulkbar">
+              <span class="muted" id="inv_selected">${inbox.selected.size} selected</span>
+              ${bulk === "import"
+                ? `<button class="btn small primary" id="inv_import" ${inbox.selected.size ? "" : "disabled"}>Import as drafts</button>
+                   <button class="btn small" id="inv_ignore" ${inbox.selected.size ? "" : "disabled"}>Ignore</button>`
+                : `<button class="btn small" id="inv_restore" ${inbox.selected.size ? "" : "disabled"}>Put back in New</button>`}
+              ${inbox.selected.size ? `<button class="btn small ghost" id="inv_clear">Clear selection</button>` : ""}
+            </div>`
+          : ""}
+        ${
+          data.items.length
+            ? `<table><thead><tr>
+                ${bulk ? `<th class="pick"><input type="checkbox" id="inv_all" title="Select everything on this page" /></th>` : ""}
+                <th>Item</th><th>Classification</th><th class="num">Pro-Data price</th><th class="num">Photos</th><th>Status</th>
+              </tr></thead>
+              <tbody>${data.items
+                .map(
+                  (item) => `<tr>
+                    ${bulk ? `<td class="pick">${canPick(item) || inbox.tab === "ignored"
+                      ? `<input type="checkbox" data-pick="${esc(item.id)}" ${inbox.selected.has(item.id) ? "checked" : ""} />` : ""}</td>` : ""}
+                    <td><span class="cell-title">${esc(item.name || item.code)}</span>
+                      <span class="cell-sub">${esc(item.code)}${item.brand ? ` · ${esc(item.brand)}` : ""}</span></td>
+                    <td class="muted">${esc([item.category, item.sub_category].filter(Boolean).join(" › ") || "—")}</td>
+                    <td class="num">${item.price === null ? "—" : eur(item.price)}</td>
+                    <td class="num">${item.image_count || "—"}</td>
+                    <td>${statusCell(item)}</td>
+                  </tr>`
+                )
+                .join("")}</tbody></table>
+              ${pager(data.count, inbox.offset, 50, (offset) => {
+                inbox.offset = offset
+                inventoryInboxView()
+              })}`
+            : emptyState(
+                inbox.tab === "new" && !inbox.q && !inbox.category
+                  ? { title: "Nothing new in Pro-Data", hint: status?.configured ? "Every item is either in the shop or set aside. New items appear after the next sync." : "Connect Pro-Data first, then its items appear here." }
+                  : { title: "No items match", hint: "Try another search word or classification, or switch tab." }
+              )
+        }
+      </div>`
+
+    const reload = (changes) => {
+      Object.assign(inbox, changes, { offset: 0 })
+      inbox.selected.clear()
+      inventoryInboxView()
+    }
+    main.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => reload({ tab: button.dataset.tab })))
+    $("#inv_q").addEventListener("change", (event) => reload({ q: event.target.value.trim() }))
+    $("#inv_cat").addEventListener("change", (event) => reload({ category: event.target.value, sub_category: "" }))
+    $("#inv_sub")?.addEventListener("change", (event) => reload({ sub_category: event.target.value }))
+    $("#inv_img").addEventListener("change", (event) => reload({ has_images: event.target.checked }))
+
+    const updateSelection = () => {
+      const count = inbox.selected.size
+      const label = $("#inv_selected")
+      if (label) label.textContent = `${count} selected`
+      for (const id of ["#inv_import", "#inv_ignore", "#inv_restore"]) {
+        const button = $(id)
+        if (button) button.disabled = !count
+      }
+    }
+    main.querySelectorAll("[data-pick]").forEach((box) =>
+      box.addEventListener("change", () => {
+        if (box.checked) inbox.selected.add(box.dataset.pick)
+        else inbox.selected.delete(box.dataset.pick)
+        updateSelection()
+      })
+    )
+    $("#inv_all")?.addEventListener("change", (event) => {
+      main.querySelectorAll("[data-pick]").forEach((box) => {
+        box.checked = event.target.checked
+        if (box.checked) inbox.selected.add(box.dataset.pick)
+        else inbox.selected.delete(box.dataset.pick)
+      })
+      updateSelection()
+    })
+    $("#inv_clear")?.addEventListener("click", () => {
+      inbox.selected.clear()
+      inventoryInboxView()
+    })
+
+    $("#inv_import")?.addEventListener("click", async () => {
+      const ids = [...inbox.selected]
+      const ok = await confirmDialog({
+        title: `Import ${ids.length} item${ids.length === 1 ? "" : "s"} as drafts?`,
+        message:
+          "Each becomes a hidden product with Pro-Data's photos and freshly written text in Albanian and English. " +
+          "Nothing shows in the shop until you open it, check it and make it visible.",
+        confirmLabel: "Import as drafts",
+        danger: false,
+      })
+      if (!ok) return
+      try {
+        const result = await api("/inventory/items/import", { method: "POST", body: { ids } })
+        toast(`Preparing ${result.queued} draft${result.queued === 1 ? "" : "s"}.${result.skipped ? ` ${result.skipped} already in the shop or on the way.` : ""}`)
+        inbox.selected.clear()
+        inventoryInboxView()
+      } catch (error) {
+        toast(error.message, true)
+      }
+    })
+    const setIgnored = async (ignored) => {
+      const ids = [...inbox.selected]
+      try {
+        const result = await api("/inventory/items/ignore", { method: "POST", body: { ids, ignored } })
+        toast(ignored ? `${result.updated} set aside. Find them under Ignored.` : `${result.updated} put back in New.`)
+        inbox.selected.clear()
+        inventoryInboxView()
+      } catch (error) {
+        toast(error.message, true)
+      }
+    }
+    $("#inv_ignore")?.addEventListener("click", () => setIgnored(true))
+    $("#inv_restore")?.addEventListener("click", () => setIgnored(false))
+    $("#inv-sync")?.addEventListener("click", () =>
+      runJobNow("catalog", { label: "Catalog sync", after: () => location.hash === "#/inventory" && inventoryInboxView() })
+    )
+
+    // While drafts are being prepared, keep the page current.
+    if (queue) {
+      inboxPoll = setTimeout(() => {
+        if (location.hash === "#/inventory") inventoryInboxView().catch(() => {})
+      }, 3000)
+    }
+  }
+
+  // ---------------------------------------------------------------- Pro-Data: Needs linking
+
+  const inventoryLinksView = async () => {
+    const [, data] = await Promise.all([refreshInventoryBadges(), api("/inventory/links?limit=200")])
+    const orders = []
+    for (const line of data.lines) {
+      let group = orders.find((entry) => entry.order_id === line.order_id)
+      if (!group) {
+        group = { order_id: line.order_id, display_id: line.display_id, created_at: line.order_created_at, last_error: line.last_error, lines: [] }
+        orders.push(group)
+      }
+      group.lines.push(line)
+    }
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div><h1>Needs linking</h1>
+          <p class="sub">Sales of products that aren't matched to a Pro-Data item yet. An order waits here, unsent, until every line is settled.</p></div>
+      </div>
+      ${
+        orders.length
+          ? `<div class="hint-box" style="margin-bottom:16px">
+              <strong>Link permanently</strong> matches the product for good — this sale and every future one.
+              <strong>This sale only</strong> uses an item just once.
+              <strong>Don't send</strong> skips this line; the rest of the order still goes.
+              <strong>Never send</strong> is for things Pro-Data doesn't stock, like services.
+            </div>
+            <div class="card">${orders
+              .map(
+                (group) => `<div class="order-group">
+                  <div class="card-head"><a href="#/orders/${esc(group.order_id)}">Order #${group.display_id}</a>
+                    <span class="muted">${esc(when(group.created_at))}</span></div>
+                  ${group.last_error ? `<div class="card-body" style="padding-bottom:0">${notice("amber", esc(group.last_error))}</div>` : ""}
+                  <table><tbody>${group.lines
+                    .map(
+                      (line) => `<tr>
+                        <td><span class="cell-title">${line.product_id ? `<a href="#/products/${esc(line.product_id)}">${esc(line.title)}</a>` : esc(line.title)}</span>
+                          <span class="cell-sub">${line.sku ? `SKU ${esc(line.sku)} · ` : ""}${line.quantity} × ${eur(line.net_price)}${
+                            line.variant_id ? "" : " · this product has since been deleted"}</span></td>
+                        <td><div class="line-actions">
+                          <button class="btn small primary" data-line="${esc(line.id)}" data-action="link" ${line.variant_id ? "" : "disabled"}>Link permanently</button>
+                          <button class="btn small" data-line="${esc(line.id)}" data-action="one_off">This sale only</button>
+                          <button class="btn small" data-line="${esc(line.id)}" data-action="dismiss">Don't send</button>
+                          <button class="btn small ghost" data-line="${esc(line.id)}" data-action="never" ${line.variant_id ? "" : "disabled"}>Never send</button>
+                        </div></td>
+                      </tr>`
+                    )
+                    .join("")}</tbody></table>
+                </div>`
+              )
+              .join("")}</div>`
+          : `<div class="card">${emptyState({
+              title: "Nothing waiting",
+              hint: "Every sale so far has a Pro-Data item. If a product without one sells, it shows up here before its order is sent.",
+            })}</div>`
+      }`
+
+    main.querySelectorAll("[data-action]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        const line = data.lines.find((entry) => entry.id === button.dataset.line)
+        const action = button.dataset.action
+        let body = { action }
+        if (action === "link" || action === "one_off") {
+          const item = await pickInventoryItem({
+            title: action === "link" ? `Link “${line.title}” to Pro-Data` : `Pick a Pro-Data item for order #${line.display_id}`,
+            message:
+              action === "link"
+                ? "Every sale of this product — this one, others waiting, and all future ones — goes to Pro-Data as the item you choose."
+                : "Only this sale uses the item you choose. The next time this product sells, you'll be asked again.",
+            confirmLabel: action === "link" ? "Link permanently" : "Use for this sale",
+          })
+          if (!item) return
+          body = { action, inventory_item_id: item.id }
+        } else {
+          const ok = await confirmDialog(
+            action === "never"
+              ? {
+                  title: `Never send “${line.title}” to Pro-Data?`,
+                  message: "For things Pro-Data doesn't stock, like services or gift wrapping. This sale and every future one skip Pro-Data. You can undo it on the product's page.",
+                  confirmLabel: "Never send it",
+                  danger: false,
+                }
+              : {
+                  title: "Don't send this line?",
+                  message: "This line won't reach Pro-Data. The rest of the order still goes.",
+                  confirmLabel: "Don't send it",
+                  danger: false,
+                }
+          )
+          if (!ok) return
+        }
+        try {
+          await api(`/inventory/links/${line.id}`, { method: "POST", body })
+          toast(action === "link" ? "Linked. Waiting sales of it are on their way to Pro-Data." : "Done.")
+          inventoryLinksView()
+        } catch (error) {
+          toast(error.message, true)
+        }
+      })
+    )
+  }
+
+  // ---------------------------------------------------------------- Pro-Data: status
+
+  const JOB_INFO = {
+    catalog: ["Catalog", "Every 6 hours", "Reads every item from Pro-Data into the Inbox."],
+    import: ["Imports", "Every 15 seconds while there is work", "Turns the items you pick into drafts."],
+    push: ["Sending orders", "Every 30 seconds", "Sends each order once it leaves “New”."],
+    tracking: ["Order tracking", "Every 15 minutes", "Follows sent orders: open, invoiced or canceled."],
+    stock: ["Stock", "Every 10 minutes", "Updates linked products' stock from Pro-Data."],
+  }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`
+
+  const describeRun = (job, run) => {
+    if (!run) return `<span class="muted">Hasn't run yet.</span>`
+    const at = `<span class="muted">${esc(when(run.finished_at))} · ${(run.duration_ms / 1000).toFixed(1)}s</span>`
+    if (!run.ok) return `<span style="color:var(--red)">Failed: ${esc(run.error)}</span><br />${at}`
+    const s = run.summary || {}
+    const text = {
+      catalog: () =>
+        `${plural(s.distinct, "item")} · ${s.inserted} new · ${s.updated} changed · ${s.removed} removed` +
+        (s.removal_skipped ? `<br /><span style="color:var(--amber)">${esc(s.removal_skipped)}</span>` : ""),
+      import: () => `${s.done} imported${s.failed ? `, ${s.failed} failed` : ""}${s.still_queued ? `, ${s.still_queued} waiting` : ""}`,
+      push: () => {
+        const parts = [["sent", "sent"], ["failed", "will retry"], ["needs_check", "need checking"], ["waiting_links", "waiting for a link"]]
+          .filter(([key]) => s[key])
+          .map(([key, label]) => `${s[key]} ${label}`)
+        return parts.length ? parts.join(", ") : "Nothing to send."
+      },
+      tracking: () => (s.tracked ? `${plural(s.changed, "status change")} across ${plural(s.tracked, "order")}` : "No orders to follow."),
+      stock: () =>
+        s.items
+          ? `${plural(s.checked, "item")} checked · ${plural(s.variants_changed, "stock level")} updated${s.failed ? ` · ${s.failed} failed` : ""}`
+          : "No linked products yet.",
+    }[job]
+    return `${text()}<br />${at}`
+  }
+
+  const inventoryStatusView = async () => {
+    const status = await refreshInventoryBadges()
+    if (!status) throw new Error("Could not read the Pro-Data status.")
+    const [warehouses, classes, { categories }] = await Promise.all([
+      api("/inventory/warehouses"),
+      api("/inventory/classifications"),
+      api("/categories"),
+    ])
+    // A sub-classification with no match of its own follows its main one —
+    // that is what the importer does, so that is what the empty choice says.
+    const categoryOptions = (selected, row) =>
+      `<option value="">${row.sub_category ? `Same as “${esc(row.category || "no classification")}”` : "Leave uncategorized"}</option>${categories
+        .map(
+          (category) => `<option value="${esc(category.id)}" ${category.id === selected ? "selected" : ""}>${
+            esc(category.parent_category_id ? "— " : "")}${esc(category.name)}</option>`
+        )
+        .join("")}`
+    const counted = warehouses.counted
+    const attention = status.attention || []
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div><h1>Pro-Data sync</h1>
+          <p class="sub">${status.configured ? `Connected to ${esc(status.connection)}` : "Not connected yet"}</p></div>
+        <button class="btn" id="inv-test" ${status.configured ? "" : "disabled"}>${icon("check", "ico sm")}Test the connection</button>
+      </div>
+
+      ${!status.configured
+        ? notice("amber", `<strong>Pro-Data isn't connected.</strong> Your developer sets this up once in the server settings:
+            <code>PRODATA_URL</code>, <code>PRODATA_USERNAME</code>, <code>PRODATA_PASSWORD</code> and, if Pro-Data gave you one,
+            <code>PRODATA_UNIQUEIDENT</code>. Use a Pro-Data user made just for the web shop.`)
+        : ""}
+      ${status.configured && status.plain_http
+        ? notice("red", `<strong>The connection to Pro-Data isn't encrypted</strong> (it uses <code>http://</code>). Its password and every order
+            cross the internet readable by anyone in between. Ask Pro-Data for an <code>https://</code> address.`)
+        : ""}
+
+      ${attention.length
+        ? `<div class="card"><div class="card-head">Needs your attention</div>
+            <table><tbody>${attention
+              .map((row) => {
+                const what = row.void_required
+                  ? `Canceled here, but still open in Pro-Data as ${esc(row.pro_data_order_id)} — cancel it there too.`
+                  : row.canceled_in_prodata
+                    ? `Canceled in Pro-Data (${esc(row.pro_data_order_id)}), but still live here.`
+                    : row.state === "needs_check"
+                      ? "Unclear whether it reached Pro-Data — check and confirm."
+                      : `Not sent yet: ${esc(row.last_error || "will try again")}`
+                return `<tr class="click" data-order="${esc(row.id)}"><td class="cell-title">#${row.display_id}</td><td>${what}</td></tr>`
+              })
+              .join("")}</tbody></table></div>`
+        : ""}
+
+      <div class="job-grid">${Object.entries(JOB_INFO)
+        .map(([job, [name, every, what]]) => {
+          const info = status.jobs[job]
+          return `<div class="job">
+            <h3>${esc(name)}
+              <label class="checkbox" title="Switch this job on or off"><input type="checkbox" data-job-toggle="${job}" ${info.enabled ? "checked" : ""} /> On</label></h3>
+            <div class="every muted">${esc(every)} · ${esc(what)}</div>
+            <div class="last">${describeRun(job, info.last_run)}</div>
+            <div class="row"><span></span>
+              <button class="btn small" data-job-run="${job}" ${status.configured ? "" : "disabled"}>Run now</button></div>
+          </div>`
+        })
+        .join("")}</div>
+
+      <div class="card"><div class="card-head">Which warehouses count
+          <span class="muted">Stock the website may sell comes from these</span></div>
+        <div class="card-body">
+          ${warehouses.warehouses.length
+            ? `<div class="warehouse-list">${warehouses.warehouses
+                .map(
+                  (name) => `<label class="checkbox"><input type="checkbox" data-warehouse="${esc(name)}" ${
+                    counted && counted.includes(name) ? "checked" : ""} /> ${esc(name)}</label>`
+                )
+                .join("")}</div>
+              <p class="field-note">Leave all unticked to count every warehouse. Negative balances in Pro-Data count as zero.</p>
+              <button class="btn small primary" id="save-warehouses">Save warehouses</button>`
+            : `<span class="muted">Warehouse names appear after the first stock check — import or link a product first.</span>`}
+        </div>
+      </div>
+
+      <div class="card"><div class="card-head">Discounts sent to Pro-Data</div><div class="card-body form-grid">
+        <label>Write the discount as
+          <select id="discount-mode">
+            <option value="percent" ${status.settings.discount_mode === "percent" ? "selected" : ""}>A percentage (rabat %)</option>
+            <option value="amount" ${status.settings.discount_mode === "amount" ? "selected" : ""}>An amount in euro</option>
+          </select>
+          <span class="help">Pro-Data always receives the price the customer really paid. This only changes how the discount column reads there.</span></label>
+      </div></div>
+
+      <div class="card"><div class="card-head">Where imported items land
+          <span class="muted">Match Pro-Data's classifications to your categories</span></div>
+        ${classes.classifications.length
+          ? `<table><thead><tr><th>Pro-Data classification</th><th class="num">Items</th><th>Your category</th></tr></thead>
+              <tbody>${classes.classifications
+                .map(
+                  (row, index) => `<tr>
+                    <td>${esc(row.category || "(no classification)")}${row.sub_category ? ` <span class="muted">› ${esc(row.sub_category)}</span>` : ""}</td>
+                    <td class="num">${row.items}</td>
+                    <td><select data-map="${index}">${categoryOptions(row.category_id, row)}</select></td>
+                  </tr>`
+                )
+                .join("")}</tbody></table>
+              <div class="card-body"><button class="btn small primary" id="save-map">Save matches</button>
+                <span class="muted" style="margin-left:8px">Only affects items imported from now on.</span></div>`
+          : `<div class="card-body muted">Classifications appear after the first catalog sync.</div>`}
+      </div>
+
+      ${status.recent_errors.length
+        ? `<div class="card"><div class="card-head">Recent problems</div>
+            <ul class="timeline" style="padding:0 18px">${status.recent_errors
+              .map((row) => `<li>${esc(row.message)}<div class="when">${esc(when(row.created_at))}</div></li>`)
+              .join("")}</ul></div>`
+        : ""}`
+
+    main.querySelectorAll("tr[data-order]").forEach((row) =>
+      row.addEventListener("click", () => (location.hash = `#/orders/${row.dataset.order}`))
+    )
+    $("#inv-test")?.addEventListener("click", async (event) => {
+      event.target.disabled = true
+      try {
+        const result = await api("/inventory/test-connection", { method: "POST" })
+        toast(result.message, !result.ok)
+      } catch (error) {
+        toast(error.message, true)
+      } finally {
+        event.target.disabled = false
+      }
+    })
+    main.querySelectorAll("[data-job-run]").forEach((button) =>
+      button.addEventListener("click", () =>
+        runJobNow(button.dataset.jobRun, {
+          label: JOB_INFO[button.dataset.jobRun][0],
+          after: () => location.hash === "#/inventory/status" && inventoryStatusView(),
+        })
+      )
+    )
+    main.querySelectorAll("[data-job-toggle]").forEach((box) =>
+      box.addEventListener("change", async () => {
+        try {
+          await api("/inventory/settings", { method: "PATCH", body: { jobs: { [box.dataset.jobToggle]: box.checked } } })
+          toast(`${JOB_INFO[box.dataset.jobToggle][0]} switched ${box.checked ? "on" : "off"}.`)
+        } catch (error) {
+          box.checked = !box.checked
+          toast(error.message, true)
+        }
+      })
+    )
+    $("#save-warehouses")?.addEventListener("click", async () => {
+      const chosen = [...main.querySelectorAll("[data-warehouse]")].filter((box) => box.checked).map((box) => box.dataset.warehouse)
+      try {
+        await api("/inventory/settings", { method: "PATCH", body: { warehouses: chosen.length ? chosen : null } })
+        toast(chosen.length ? `Stock now comes from ${plural(chosen.length, "warehouse")}.` : "Stock now comes from every warehouse.")
+      } catch (error) {
+        toast(error.message, true)
+      }
+    })
+    $("#discount-mode").addEventListener("change", async (event) => {
+      try {
+        await api("/inventory/settings", { method: "PATCH", body: { discount_mode: event.target.value } })
+        toast("Saved.")
+      } catch (error) {
+        toast(error.message, true)
+      }
+    })
+    $("#save-map")?.addEventListener("click", async () => {
+      const mappings = classes.classifications.map((row, index) => ({
+        category: row.category,
+        sub_category: row.sub_category,
+        category_id: main.querySelector(`[data-map="${index}"]`).value || null,
+      }))
+      try {
+        await api("/inventory/category-map", { method: "PUT", body: { mappings } })
+        toast("Matches saved.")
+      } catch (error) {
+        toast(error.message, true)
+      }
+    })
+  }
+
+  // ---------------------------------------------------------------- Pro-Data: product panel
+
+  /** The Pro-Data card in the product editor. Loads after the editor, so it never slows it down. */
+  const mountProDataPanel = async (productId, product, variantEditor, holder) => {
+    let data
+    try {
+      data = await api(`/inventory/products/${productId}`)
+    } catch {
+      return
+    }
+    if (!data.configured && !data.variants.some((variant) => variant.item)) return
+    const status = inventoryStatus || (await refreshInventoryBadges())
+    const stockSyncOn = data.configured && status?.jobs.stock.enabled !== false
+    variantEditor.lockStock(
+      stockSyncOn ? data.variants.filter((v) => v.item && v.manage_stock && v.inventory_sync).map((v) => v.variant_id) : []
+    )
+    const flags = product.status === "draft" && data.imported ? data.import_flags : []
+
+    holder.innerHTML = `<div class="card">
+      <div class="card-head">Pro-Data <span class="muted">Where this product is stocked</span></div>
+      ${flags.length
+        ? notice("amber", `<strong>Imported from Pro-Data — check before making it visible:</strong>
+            <ul style="margin:6px 0 0;padding-left:18px">${flags.map((flag) => `<li>${esc(IMPORT_FLAGS[flag] || flag)}</li>`).join("")}</ul>`)
+        : ""}
+      <table><thead><tr><th>Version</th><th>Pro-Data item</th><th class="num">Pro-Data price</th><th class="num">Available</th>
+        <th>Send sales to Pro-Data</th><th></th></tr></thead>
+      <tbody>${data.variants
+        .map((variant) => {
+          const item = variant.item
+          const warehouses = (item?.warehouses || []).map((w) => `${w.warehouse}: ${w.quantity}`).join("\n")
+          return `<tr>
+            <td>${esc(variant.variant_title === "Default" ? "Standard" : variant.variant_title)}</td>
+            <td>${item
+              ? `<span class="cell-title">${esc(item.name || item.code)}</span><span class="cell-sub">${esc(item.code)}</span>
+                 ${item.removed ? `<span class="badge red">Removed from Pro-Data</span>` : ""}
+                 ${item.shared_with ? `<span class="badge amber" title="Each of them shows Pro-Data's full stock">Also linked to ${plural(item.shared_with, "other product")}</span>` : ""}`
+              : `<span class="muted">Not linked</span>`}</td>
+            <td class="num">${item?.price !== null && item?.price !== undefined ? `${eur(item.price)}${item.vat !== null ? ` <span class="muted">VAT ${item.vat}%</span>` : ""}` : "—"}</td>
+            <td class="num" title="${esc(warehouses)}">${item ? (item.available === null ? `<span class="muted">not checked yet</span>` : item.available) : "—"}</td>
+            <td><label class="checkbox"><input type="checkbox" data-sync="${esc(variant.variant_id)}" ${variant.inventory_sync ? "checked" : ""} /> ${variant.inventory_sync ? "Yes" : "No"}</label></td>
+            <td><div class="line-actions">
+              <button class="btn small" data-link="${esc(variant.variant_id)}">${item ? "Change" : "Link to an item"}</button>
+              ${item ? `<button class="btn small ghost" data-unlink="${esc(variant.variant_id)}">Unlink</button>` : ""}
+            </div></td>
+          </tr>`
+        })
+        .join("")}</tbody></table>
+      <div class="card-body"><p class="field-note" style="margin:0">
+        ${stockSyncOn ? "Stock of linked versions comes from Pro-Data every 10 minutes, less anything sold online that Pro-Data hasn't invoiced yet. " : ""}
+        To sell another Pro-Data item as a second version, add the version above, save, then link it here.</p></div>
+    </div>`
+
+    const refresh = () => productEditView(productId)
+    holder.querySelectorAll("[data-link]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        const item = await pickInventoryItem({
+          title: "Link to a Pro-Data item",
+          message: "Sales of this version go to Pro-Data as the item you choose, and its stock follows Pro-Data's.",
+          confirmLabel: "Link",
+        })
+        if (!item) return
+        try {
+          const result = await api(`/inventory/variants/${button.dataset.link}/link`, { method: "PUT", body: { inventory_item_id: item.id } })
+          toast(result.alsoLinkedTo?.length
+            ? `Linked. Note: ${result.alsoLinkedTo.map((p) => `“${p.title}”`).join(", ")} is linked to the same item.`
+            : "Linked. Its stock updates within a few minutes.")
+          refresh()
+        } catch (error) {
+          toast(error.message, true)
+        }
+      })
+    )
+    holder.querySelectorAll("[data-unlink]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        const ok = await confirmDialog({
+          title: "Unlink from Pro-Data?",
+          message: "Future sales of this version will wait under Needs linking, and its stock stops following Pro-Data.",
+          confirmLabel: "Unlink",
+          danger: false,
+        })
+        if (!ok) return
+        try {
+          await api(`/inventory/variants/${button.dataset.unlink}/link`, { method: "PUT", body: { inventory_item_id: null } })
+          toast("Unlinked.")
+          refresh()
+        } catch (error) {
+          toast(error.message, true)
+        }
+      })
+    )
+    holder.querySelectorAll("[data-sync]").forEach((box) =>
+      box.addEventListener("change", async () => {
+        try {
+          await api(`/inventory/variants/${box.dataset.sync}`, { method: "PATCH", body: { inventory_sync: box.checked } })
+          toast(box.checked ? "Sales of it go to Pro-Data again." : "Sales of it won't be sent to Pro-Data.")
+          refresh()
+        } catch (error) {
+          box.checked = !box.checked
+          toast(error.message, true)
+        }
+      })
+    )
+  }
+
+  // ---------------------------------------------------------------- Pro-Data: order panel
+
+  const proDataOrderPanel = (data, order) => {
+    if (!data || (!data.configured && !data.push)) return ""
+    const push = data.push
+    let body
+    if (!push) {
+      body =
+        order.status === "pending"
+          ? `<p class="muted" style="margin:0">It goes to Pro-Data when you start preparing it (<strong>Mark processing</strong>).</p>`
+          : order.status === "canceled"
+            ? `<p class="muted" style="margin:0">Canceled before it was sent — nothing went to Pro-Data.</p>`
+            : `<p class="muted" style="margin:0">Not sent to Pro-Data.</p>
+               <div class="row" style="margin-top:10px"><button class="btn small primary" id="pd-send">Send to Pro-Data now</button></div>`
+    } else {
+      const notices = []
+      if (push.void_required) {
+        notices.push(notice("red", `<strong>Cancel order ${esc(push.pro_data_order_id)} in Pro-Data too.</strong>
+          It was canceled here after Pro-Data received it, and their system can't be canceled from the shop.
+          This clears by itself once Pro-Data shows it canceled.
+          <div class="row"><button class="btn small" id="pd-void">I've canceled it in Pro-Data</button></div>`))
+      }
+      if (push.canceled_in_prodata) {
+        notices.push(notice("amber", `Pro-Data canceled order ${esc(push.pro_data_order_id)}, but it is still live here. Check with whoever canceled it.`))
+      }
+      if (push.returns_to_record) {
+        notices.push(notice("amber", "A refund here put items back into stock. Record the same return in Pro-Data."))
+      }
+      if (push.state === "needs_check") {
+        notices.push(notice("red", `<strong>It's unclear whether this order reached Pro-Data.</strong> ${esc(push.last_error || "")}
+          <div class="row">
+            <button class="btn small primary" id="pd-arrived">It's in Pro-Data…</button>
+            <button class="btn small" id="pd-resend">It isn't — send it again</button>
+          </div>`))
+      } else if (push.state === "failed") {
+        notices.push(notice("red", `${esc(push.last_error || "Sending failed.")}
+          ${push.next_attempt_at ? ` Next try ${esc(when(push.next_attempt_at))}.` : ""}
+          <div class="row"><button class="btn small" id="pd-retry">Try now</button></div>`))
+      } else if (push.state === "waiting_links") {
+        notices.push(notice("amber", `Some lines aren't matched to a Pro-Data item yet. <a href="#/inventory/links">Settle them under Needs linking</a> and the order goes out.`))
+      } else if (push.state === "dismissed" && push.last_error) {
+        notices.push(`<p class="muted" style="margin:0 0 10px">${esc(push.last_error)}</p>`)
+      }
+      const resolutionLabel = { dismissed: "Not sent", one_off: "This sale only", linked: "", auto: "" }
+      body = `${notices.join("")}
+        <table><thead><tr><th>Line</th><th class="num">Qty</th><th class="num">Price sent</th><th>Pro-Data item</th></tr></thead>
+        <tbody>${data.lines
+          .map(
+            (line) => `<tr>
+              <td>${esc(line.title)}</td><td class="num">${line.quantity}</td><td class="num">${eur(line.net_price)}</td>
+              <td>${line.resolution === null
+                ? `<span class="badge amber">Needs a link</span>`
+                : line.resolution === "dismissed"
+                  ? `<span class="muted">Not sent</span>`
+                  : `${esc(line.code || "")} ${resolutionLabel[line.resolution] ? `<span class="muted">(${resolutionLabel[line.resolution]})</span>` : ""}`}</td>
+            </tr>`
+          )
+          .join("")}</tbody></table>`
+    }
+    return `<div class="card"><div class="card-head">Pro-Data
+        <span class="row">${push ? stateBadge(PUSH_STATE[push.state] || ["", push.state]) : ""}
+          ${push?.pro_data_order_id ? `<span class="badge">${esc(push.pro_data_order_id)}</span>` : ""}
+          ${push?.pro_data_status ? stateBadge(PRODATA_STATUS[push.pro_data_status]) : ""}</span></div>
+      <div class="card-body">${body}</div></div>`
+  }
+
+  const wireProDataOrderPanel = (orderId, data, refresh) => {
+    if (!data) return
+    const call = async (path, body, message) => {
+      try {
+        await api(`/inventory/orders/${orderId}/${path}`, { method: "POST", body })
+        toast(message)
+        refreshInventoryBadges()
+        refresh()
+      } catch (error) {
+        toast(error.message, true)
+      }
+    }
+    $("#pd-send")?.addEventListener("click", () => call("send", undefined, "On its way to Pro-Data."))
+    $("#pd-retry")?.addEventListener("click", () => call("send", undefined, "Trying again now."))
+    $("#pd-resend")?.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "Send it to Pro-Data again?",
+        message: "Only do this after checking Pro-Data: if the order is already there, sending again creates a duplicate.",
+        confirmLabel: "Send again",
+      })
+      if (ok) call("resolve", { action: "send_again" }, "On its way to Pro-Data.")
+    })
+    $("#pd-void")?.addEventListener("click", () => call("resolve", { action: "void_done" }, "Noted — thanks."))
+    $("#pd-arrived")?.addEventListener("click", async () => {
+      const result = await openModal({
+        title: "Which order is it in Pro-Data?",
+        message: "Find it in Pro-Data's sales orders — it mentions this order's number in its comment — and enter its number.",
+        iconName: "check",
+        confirmLabel: "Save",
+        body: `<label>Pro-Data order number <input id="pd_no" placeholder="e.g. 26-PSEC-001-30" /></label>
+          <p class="form-error modal-error hidden"></p>`,
+        collect: (root) => {
+          const value = root.querySelector("#pd_no").value.trim()
+          if (!value) {
+            modalError(root, "Enter the order number Pro-Data shows.")
+            return undefined
+          }
+          return value
+        },
+      })
+      if (result) call("resolve", { action: "arrived", pro_data_order_id: result }, "Recorded.")
     })
   }
 
@@ -2341,6 +3310,9 @@
     { pattern: /^#\/suppliers$/, view: () => suppliersView(), nav: "suppliers" },
     { pattern: /^#\/suppliers\/([0-9a-f-]{36})$/, view: (id) => suppliersView(id), nav: "suppliers" },
     { pattern: /^#\/import$/, view: () => importView(), nav: "import" },
+    { pattern: /^#\/inventory$/, view: () => inventoryInboxView(), nav: "inventory" },
+    { pattern: /^#\/inventory\/links$/, view: () => inventoryLinksView(), nav: "inventory-links" },
+    { pattern: /^#\/inventory\/status$/, view: () => inventoryStatusView(), nav: "inventory-status" },
     { pattern: /^#\/settings$/, view: () => settingsView(), nav: "settings" },
   ]
 
@@ -2356,6 +3328,9 @@
     shipping: "Shipping",
     suppliers: "Suppliers",
     import: "Import from Excel",
+    inventory: "Pro-Data Inbox",
+    "inventory-links": "Needs linking",
+    "inventory-status": "Pro-Data sync",
     settings: "Settings",
   }
 

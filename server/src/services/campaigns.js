@@ -133,12 +133,12 @@ const collectDiscounts = async (cart, options = {}) => {
   for (const campaign of automatic) {
     const result = await evaluate(campaign, cart, options)
     if (!result.ok) continue
-    applied.push({ campaign, discount: result.discount })
+    applied.push({ campaign, discount: result.discount, lines: result.lines })
   }
 
   if (cart.promo_code) {
     const result = await checkCode(cart.promo_code, cart, options)
-    if (!result.error) applied.push({ campaign: result.campaign, discount: result.discount })
+    if (!result.error) applied.push({ campaign: result.campaign, discount: result.discount, lines: result.lines })
   }
 
   const discounts = []
@@ -156,14 +156,20 @@ const collectDiscounts = async (cart, options = {}) => {
       const amount = money(Math.min(entry.discount, itemsTotal - itemsDiscount))
       if (amount <= 0) continue
       itemsDiscount = money(itemsDiscount + amount)
-      discounts.push(describe(entry.campaign, amount, false))
+      discounts.push(describe(entry.campaign, amount, false, entry.lines))
     }
   }
 
   return { discounts, total: money(itemsDiscount + shippingDiscount), itemsDiscount, shippingDiscount }
 }
 
-const describe = (campaign, amount, isShipping) => ({
+/**
+ * `product_ids` records which products a scoped discount actually landed on.
+ * The order keeps it, so anything that later needs the discount per line —
+ * sending the sale to Pro-Data at the price the customer really paid — does
+ * not have to re-run a campaign that may have been edited since.
+ */
+const describe = (campaign, amount, isShipping, lines = null) => ({
   id: campaign.id,
   code: campaign.code,
   name: campaign.name || campaign.code,
@@ -172,6 +178,9 @@ const describe = (campaign, amount, isShipping) => ({
   is_automatic: campaign.is_automatic,
   amount,
   is_shipping: isShipping,
+  ...(lines && ["product", "category"].includes(campaign.applies_to)
+    ? { product_ids: [...new Set(lines.map((line) => line.product_id))] }
+    : {}),
 })
 
 /** Records usage once an order is placed (inside the order transaction). */

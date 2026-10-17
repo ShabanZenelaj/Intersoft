@@ -3,6 +3,8 @@ const { check, isUuid, money, pageParams } = require("../../lib/util")
 const { orderToJson } = require("../../lib/serialize")
 const payments = require("../../services/payments")
 const mail = require("../../services/mail")
+const inventory = require("../../services/inventory")
+const scheduler = require("../../jobs/scheduler")
 
 const loadOrder = async (id) => {
   check(isUuid(id), "Invalid order id.")
@@ -52,25 +54,45 @@ const get = async (req, res) => {
 }
 
 const setStatus = async (req, res) => {
-  const order = await loadOrder(req.params.id)
   const { status } = req.body
-  check(order.status !== "canceled", "The order is canceled.")
+  await loadOrder(req.params.id)
 
-  if (status === "canceled") {
-    await tx(async (client) => {
-      for (const item of order.items) {
+  // The order row is locked for the whole change, and every decision below is
+  // made on the status read under that lock. Two admins clicking at once can
+  // then neither restock twice nor send the order to Pro-Data twice.
+  const { order, sendQueued } = await tx(async (client) => {
+    const { rows } = await client.query("select * from orders where id = $1 for update", [req.params.id])
+    const current = rows[0]
+    check(current.status !== "canceled", "The order is canceled.")
+
+    if (status === "canceled") {
+      for (const item of current.items) {
         await client.query("update variants set stock = stock + $1 where id = $2 and manage_stock", [
           item.quantity,
           item.variant_id,
         ])
       }
-      await client.query("update orders set status = 'canceled', updated_at = now() where id = $1", [order.id])
-    })
+      await client.query("update orders set status = 'canceled', updated_at = now() where id = $1", [current.id])
+      await inventory.pushes.onOrderCanceled(client, current.id)
+      return { order: current, sendQueued: false }
+    }
+
+    await client.query("update orders set status = $1, updated_at = now() where id = $2", [status, current.id])
+    // The first move out of `pending` — to Processing, or straight to Shipped
+    // or Delivered — is what sends the order to Pro-Data.
+    let push = null
+    if (current.status === "pending" && status !== "pending") {
+      push = await inventory.pushes.onOrderConfirmed(client, current)
+    }
+    return { order: current, sendQueued: push?.state === "queued" }
+  })
+
+  if (status === "canceled") {
     await addEvent(order.id, "status_changed", { from: order.status, to: "canceled", restocked: true })
   } else {
-    await query("update orders set status = $1, updated_at = now() where id = $2", [status, order.id])
     await addEvent(order.id, "status_changed", { from: order.status, to: status })
   }
+  if (sendQueued) scheduler.kick("push")
 
   const updated = await loadOrder(order.id)
   // Keep the customer informed at every step, unless the admin opts out.

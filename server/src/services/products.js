@@ -1,5 +1,7 @@
 const { query, tx } = require("../db")
 const { slugify, money, check } = require("../lib/util")
+const prodata = require("./prodata")
+const settings = require("./settings")
 
 /** The single "Sale" price list that powers storefront sale prices. */
 const getOrCreateSalePriceList = async () => {
@@ -23,7 +25,21 @@ const normalizeVariantInput = (variant) => ({
       : money(variant.sale_price),
   stock: Math.max(0, Math.floor(Number(variant.stock) || 0)),
   manage_stock: variant.manage_stock !== false,
+  // Internal only: set by the Pro-Data importer when it creates a variant. The
+  // admin's product schema does not declare it, so an editor save cannot
+  // create or move a link — that has its own endpoint.
+  inventory_item_id: variant.inventory_item_id || null,
 })
+
+/**
+ * While Pro-Data's stock sync is running, it owns the stock of linked
+ * variants. An editor save must not put back whatever number was on screen
+ * when the form was opened.
+ */
+const stockSyncOwnsLinkedStock = async () => {
+  if (!prodata.isConfigured()) return false
+  return (await settings.jobSwitches()).stock !== false
+}
 
 /**
  * A product ships with exactly one option. Priority: what the form sent →
@@ -81,6 +97,7 @@ const upsertProduct = async (input, productId = null) => {
 
   const images = Array.isArray(input.images) ? input.images.filter(Boolean) : []
   const shippingMethodId = await resolveShippingMethodId(input)
+  const keepLinkedStock = await stockSyncOwnsLinkedStock()
   const fields = [
     String(input.title).trim(),
     handle,
@@ -126,18 +143,20 @@ const upsertProduct = async (input, productId = null) => {
     for (const [index, variant] of variants.entries()) {
       if (variant.id && existingVariants.some((row) => row.id === variant.id)) {
         await client.query(
-          `update variants set title=$1, sku=$2, options=$3, price=$4, stock=$5, manage_stock=$6, sort_order=$7
+          `update variants set title=$1, sku=$2, options=$3, price=$4,
+                  stock = case when inventory_item_id is not null and $10 then stock else $5 end,
+                  manage_stock=$6, sort_order=$7
             where id=$8 and product_id=$9`,
           [variant.title, variant.sku, JSON.stringify(variant.options), variant.price, variant.stock,
-           variant.manage_stock, index, variant.id, id]
+           variant.manage_stock, index, variant.id, id, keepLinkedStock]
         )
         keptIds.add(variant.id)
       } else {
         const { rows } = await client.query(
-          `insert into variants (product_id, title, sku, options, price, stock, manage_stock, sort_order)
-           values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+          `insert into variants (product_id, title, sku, options, price, stock, manage_stock, sort_order, inventory_item_id)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
           [id, variant.title, variant.sku, JSON.stringify(variant.options), variant.price, variant.stock,
-           variant.manage_stock, index]
+           variant.manage_stock, index, variant.inventory_item_id]
         )
         variant.id = rows[0].id
         keptIds.add(rows[0].id)

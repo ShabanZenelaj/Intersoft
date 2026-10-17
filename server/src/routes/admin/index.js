@@ -34,5 +34,6 @@ router.use(require("./suppliers"))
 router.use(require("./uploads"))
 router.use(require("./import"))
 router.use(require("./ai"))
+router.use(require("./inventory"))
 
 module.exports = router

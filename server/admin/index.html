@@ -23,6 +23,9 @@
       <g id="i-shipping"><rect x="1.5" y="6" width="12" height="10" rx="1.5"/><path d="M13.5 10h4l3 3v3h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></g>
       <g id="i-suppliers"><path d="M3 21V9l9-6 9 6v12z"/><path d="M9 21v-6h6v6"/></g>
       <g id="i-import"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></g>
+      <g id="i-inbox"><path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></g>
+      <g id="i-link"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></g>
+      <g id="i-sync"><path d="M20 11a8 8 0 0 0-14.5-4.6L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.6L20 16"/><path d="M20 20v-4h-4"/></g>
       <g id="i-settings"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 15H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 8.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 4.6V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.5 1.5l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></g>
       <g id="i-store"><path d="M4 9h16v11H4z"/><path d="M3 9l1.5-5h15L21 9M9 20v-6h6v6"/></g>
       <g id="i-search"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g>
@@ -72,6 +75,11 @@
         <a href="#/categories" data-route="categories"><svg class="ico" viewBox="0 0 24 24"><use href="#i-categories"/></svg>Categories</a>
         <a href="#/suppliers" data-route="suppliers"><svg class="ico" viewBox="0 0 24 24"><use href="#i-suppliers"/></svg>Suppliers</a>
         <a href="#/import" data-route="import"><svg class="ico" viewBox="0 0 24 24"><use href="#i-import"/></svg>Import from Excel</a>
+
+        <span class="nav-group">Pro-Data</span>
+        <a href="#/inventory" data-route="inventory"><svg class="ico" viewBox="0 0 24 24"><use href="#i-inbox"/></svg>Inbox<span class="nav-count hidden" data-count="inbox"></span></a>
+        <a href="#/inventory/links" data-route="inventory-links"><svg class="ico" viewBox="0 0 24 24"><use href="#i-link"/></svg>Needs linking<span class="nav-count hidden" data-count="links"></span></a>
+        <a href="#/inventory/status" data-route="inventory-status"><svg class="ico" viewBox="0 0 24 24"><use href="#i-sync"/></svg>Sync status<span class="nav-count hidden" data-count="problems"></span></a>
 
         <span class="nav-group">Pricing &amp; offers</span>
         <a href="#/price-lists" data-route="price-lists"><svg class="ico" viewBox="0 0 24 24"><use href="#i-pricelists"/></svg>Price lists</a>

@@ -73,7 +73,12 @@ app.use((error, req, res, _next) => {
 })
 
 const port = Number(process.env.PORT) || 9000
-const server = app.listen(port, () => console.log(`Intersoft server on http://localhost:${port} (admin at /admin)`))
+const server = app.listen(port, () => {
+  console.log(`Intersoft server on http://localhost:${port} (admin at /admin)`)
+  // Background sync with Pro-Data. Does nothing unless PRODATA_URL and its
+  // credentials are set.
+  require("./jobs/scheduler").start()
+})
 
 /**
  * Process-level failures.
